@@ -53,13 +53,15 @@ Google's published Kimi K2.5 NVFP4 reference: <https://github.com/shivajid/sglan
 
 Workload: ISL=1024, OSL=8192, conc=512, 1,536 prompts. **bold** = directly comparable column.
 
-| Variant | Benchmark / OSL | Throughput | TTFT P50 | ITL P50 |
-|---|---|---|---|---|
-| Google Standalone (published reference) | bench_serving, variable OSL | 3,237 tok/s | 304 ms | 121 ms |
-| **NVIDIA Standalone** (matches Google methodology) | bench_serving, variable OSL | **3,374 tok/s** (+4.2%) | **288 ms** (-5%) | **118 ms** (-2.5%) |
-| **NVIDIA Standalone (fixed-OSL baseline)** ← Dynamo apples-to-apples reference | aiperf, **locked OSL=8192** | **3,971 tok/s** | 14,781 ms | 122.6 ms |
-| Dynamo parity | aiperf, locked OSL=8192 | 3,723 tok/s (-6.2% vs fixed-OSL baseline) | — (under investigation) | 128 ms |
-| Dynamo optimized — work in progress (best so far: bench_serving, 80% shared prefix) | bench_serving, locked OSL=8192 | **3,975 tok/s** (+22.8% vs Google) | — | 126 ms |
+| Variant | SGLang version | Benchmark / OSL | Throughput | TTFT P50 | ITL P50 |
+|---|---|---|---|---|---|
+| Google Standalone (published reference) | `lmsysorg/sglang:dev-cu13` | bench_serving, variable OSL | 3,237 tok/s | 304 ms | 121 ms |
+| **NVIDIA Standalone** (matches Google methodology) | `lmsysorg/sglang:dev-cu13` | bench_serving, variable OSL | **3,374 tok/s** (+4.2%) | **288 ms** (-5%) | **118 ms** (-2.5%) |
+| **NVIDIA Standalone (fixed-OSL baseline)** ← Dynamo apples-to-apples reference | `lmsysorg/sglang:v0.5.10.post1` | aiperf, **locked OSL=8192** | **3,971 tok/s** | 14,781 ms | 122.6 ms |
+| Dynamo parity | `v0.5.10.post1` (bundled in `sglang-runtime:1.1.0`) | aiperf, locked OSL=8192 | 3,723 tok/s (-6.2% vs fixed-OSL baseline) | — (under investigation) | 128 ms |
+| Dynamo optimized — work in progress (best so far: bench_serving, 80% shared prefix) | `v0.5.10.post1` (bundled in `sglang-runtime:1.1.0`) | bench_serving, locked OSL=8192 | **3,975 tok/s** (+22.8% vs Google) | — | 126 ms |
+
+*SGLang version note*: The Standalone fixed-OSL baseline (row 3) is intentionally pinned to `v0.5.10.post1` — the same SGLang version bundled in Dynamo's certified `sglang-runtime:1.1.0` image — so the Dynamo parity comparison (row 4) holds the SGLang code constant and isolates the wrapper effect from upstream SGLang version drift. Rows 1-2 use the rolling `dev-cu13` tag to match Google's published methodology.
 
 **Reading guide:**
 - **Goal 1** (NVIDIA Standalone vs Google): direct apples-to-apples — both use `bench_serving` + variable OSL. NVIDIA Standalone matches and slightly exceeds Google's reference on every metric.

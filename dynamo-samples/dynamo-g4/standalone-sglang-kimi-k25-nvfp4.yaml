@@ -1,4 +1,4 @@
-# Raw SGLang baseline for Kimi K2.5 NVFP4 — 2-node g4-dynamo-mn cluster.
+# Raw SGLang baseline for Kimi K2.5 NVFP4 — 2-node g4 (RTX PRO 6000) GKE cluster.
 # Mirrors https://github.com/shivajid/sglang-rtx-pro-6000/blob/main/models/KimiK2.5/nvfp4/sglang-kimi-nvfp4-2node.yaml
 # flag-for-flag. Topology: TP=8 + PP=2 across 2 g4-standard-384 nodes as one
 # distributed SGLang worker (StatefulSet replicas=2 = the two pods of that worker).
@@ -85,7 +85,7 @@ spec:
                 fieldRef:
                   apiVersion: v1
                   fieldPath: metadata.labels['apps.kubernetes.io/pod-index']
-            # NCCL — cross-node PP traffic uses eth0,eth1 on multi-NIC g4-dynamo-mn nodes.
+            # NCCL — cross-node PP traffic uses eth0,eth1 on multi-NIC g4 nodes.
             - name: NCCL_DEBUG
               value: INFO
             - name: NCCL_SOCKET_IFNAME

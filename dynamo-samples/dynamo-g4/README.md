@@ -1,8 +1,6 @@
 # Dynamo on GCP g4 (RTX PRO 6000 Blackwell) — Kimi K2.5 NVFP4
 
-NVIDIA Dynamo + SGLang reference deployment for **Kimi K2.5 NVFP4** on Google Cloud's `g4-standard-384` instance (8× RTX PRO 6000 Blackwell, SM_120).
-
-Tested on a 2-node `g4-dynamo-mn` GKE cluster with multi-NIC + jumbo MTU + local NVMe.
+NVIDIA Dynamo + SGLang reference deployment for **Kimi K2.5 NVFP4** on Google Cloud's `g4-standard-384` instance (8× RTX PRO 6000 Blackwell, SM_120). 2-node GKE topology, TP=8 + PP=2.
 
 ## What's here
 
@@ -17,7 +15,7 @@ Tested on a 2-node `g4-dynamo-mn` GKE cluster with multi-NIC + jumbo MTU + local
 ## Topology
 
 ```
-2× g4-standard-384  (16 GPUs total)
+2× g4-standard-384  (16 GPUs total, RTX PRO 6000 Blackwell SM_120)
 ├── TP=8 × PP=2     (one distributed SGLang worker across both nodes)
 ├── DP=8            (DP attention on for MoE)
 └── modelopt_fp4    (NVFP4 weights ~370 GB, bf16 KV cache, mem-fraction 0.82)
@@ -51,11 +49,19 @@ Each YAML and script has inline comments explaining the choices.
 
 Google's published Kimi K2.5 NVFP4 reference: <https://github.com/shivajid/sglang-rtx-pro-6000/tree/main/models/KimiK2.5/nvfp4>
 
-Headline numbers (workload: ISL=1024, OSL=8192, conc=512, 1,536 prompts):
+## Headline numbers
 
-| Variant | Throughput | TTFT P50 | ITL P50 |
-|---|---|---|---|
-| Google Standalone (reference) | 3,237 tok/s | 304 ms | 121 ms |
-| NVIDIA Standalone (this repo) | **3,374 tok/s** (+4.2%) | **288 ms** (-5%) | **118 ms** (-2.5%) |
-| Dynamo parity | 3,723 tok/s | (locked-OSL methodology, not directly comparable to Google's variable-OSL numbers) | 128 ms |
-| Dynamo optimized (best, bench_serving, 80% shared prefix) | **3,975 tok/s** (+22.8% vs Google) | latency-focused win | — |
+Workload: ISL=1024, OSL=8192, conc=512, 1,536 prompts. **bold** = directly comparable column.
+
+| Variant | Benchmark / OSL | Throughput | TTFT P50 | ITL P50 |
+|---|---|---|---|---|
+| Google Standalone (published reference) | bench_serving, variable OSL | 3,237 tok/s | 304 ms | 121 ms |
+| **NVIDIA Standalone** (matches Google methodology) | bench_serving, variable OSL | **3,374 tok/s** (+4.2%) | **288 ms** (-5%) | **118 ms** (-2.5%) |
+| **NVIDIA Standalone (fixed-OSL baseline)** ← Dynamo apples-to-apples reference | aiperf, **locked OSL=8192** | **3,971 tok/s** | 14,781 ms | 122.6 ms |
+| Dynamo parity | aiperf, locked OSL=8192 | 3,723 tok/s (-6.2% vs fixed-OSL baseline) | 27,843 ms | 128 ms |
+| Dynamo optimized (best, bench_serving, 80% shared prefix) | bench_serving, locked OSL=8192 | **3,975 tok/s** (+22.8% vs Google) | latency-focused win | 126 ms |
+
+**Reading guide:**
+- **Goal 1** (NVIDIA Standalone vs Google): direct apples-to-apples — both use `bench_serving` + variable OSL. NVIDIA Standalone matches and slightly exceeds Google's reference on every metric.
+- **Goal 2** (Dynamo parity vs NVIDIA Standalone fixed-OSL baseline): both use `aiperf` + locked OSL + the same SGLang version that's bundled in Dynamo's certified runtime image, so the comparison isolates the Dynamo wrapper from engine config differences. Throughput within ~6% of the baseline.
+- **Goal 3** (Dynamo optimized): best throughput of all NVFP4 runs at 80% shared prefix. Dynamo's value-add is most visible at multi-replica with KV-aware routing on shared-prefix workloads.

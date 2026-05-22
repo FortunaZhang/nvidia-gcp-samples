@@ -1,0 +1,347 @@
+# Dynamo parity DGD with random router (no KV-aware routing).
+# Use this for the clean Goal 2 (Dynamo-vs-Standalone parity) measurement.
+#
+# WHY RANDOM ROUTER:
+# At single-instance (replicas=1), KV-aware routing has no value — there's only
+# one worker to route to. Setting --router-mode kv adds compute overhead on every
+# request (prefix-overlap lookup) for a degenerate choice. Using --router-mode
+# random removes that router compute, isolating just the Frontend / HTTP /
+# service-mesh overhead — the cleanest Dynamo-vs-Standalone parity number.
+#
+# DIFFERENCE vs dgd-agg-sglang-kimi-k25-nvfp4.yaml (the legacy kv-router DGD):
+#   --router-mode kv  →  --router-mode random
+#   removed:  --no-kv-events  (irrelevant for random routing)
+#   Engine flags: IDENTICAL (same SGLang config as Google's reference manifest)
+#
+# DGD NAME: same as the legacy DGD (`agg-sglang-kimi-k25-nvfp4`) so the Frontend
+# service URL is unchanged — existing benchmark scripts (and the dedicated
+# run-benchmark-parity.sh) hit the same URL without modification.
+# To switch between this and the legacy kv-router DGD: tear down one, apply the
+# other. They cannot coexist (same name, same namespace).
+#
+# APPLY ORDER:
+#   kubectl delete -f dgd-agg-sglang-kimi-k25-nvfp4.yaml 2>/dev/null  # if legacy present
+#   kubectl apply  -f dgd-agg-sglang-kimi-k25-nvfp4-parity.yaml
+#   kubectl get pods -l nvidia.com/dynamo-graph-deployment-name=agg-sglang-kimi-k25-nvfp4 -w
+#
+# EXPECTED OUTCOME (vs Standalone SGLang same workload, aiperf no ignore_eos):
+#   Throughput: Dynamo 3-5% lower (Frontend overhead only, no KV router compute)
+#   TTFT P50: within 100 ms of Standalone
+#   TTFT P99: similar
+#   ITL P50/P99: similar (Dynamo may win P99 marginally from DP balancing)
+#
+# This is the answer to "is Dynamo on par with Standalone?" — Goal 2.
+---
+apiVersion: nvidia.com/v1alpha1
+kind: DynamoGraphDeployment
+metadata:
+  name: agg-sglang-kimi-k25-nvfp4
+  namespace: default
+spec:
+  services:
+    Frontend:
+      componentType: frontend
+      replicas: 1
+      extraPodSpec:
+        imagePullSecrets:
+          - name: nvcr-imagepullsecret
+        mainContainer:
+          image: nvcr.io/nvidia/ai-dynamo/sglang-runtime:1.1.0
+          command: ["python3"]
+          args:
+            - -m
+            - dynamo.frontend
+            - --router-mode
+            - random              # KV routing has no benefit at replicas=1; use random
+            # 2026-05-22: --dyn-chat-processor sglang TESTED TWICE (with and
+            # without --tool-call-parser/--reasoning-parser kimi_k2 here) — both
+            # returned 404 on every request because the chat processor uses a
+            # model-discovery path that doesn't see the worker's standard
+            # registration. /v1/models stayed empty in both attempts even though
+            # the engine successfully registered the MDC and the kube discovery
+            # daemon saw 4 endpoints. Likely needs a Frontend-worker pairing flag
+            # not documented in sglang-chat-processor.md. Reverting to default
+            # Rust preprocessor so the parity benchmark can run.
+            # When ready to retry: add these lines back AND figure out the
+            # missing model-discovery hook (probably a Frontend-side flag like
+            # --dyn-model-discovery=mdc or an explicit --model registration).
+            #   - --dyn-chat-processor
+            #   - sglang
+            #   - --tool-call-parser
+            #   - kimi_k2
+            #   - --reasoning-parser
+            #   - kimi_k2
+          env:
+            - name: POD_UID
+              valueFrom: { fieldRef: { fieldPath: metadata.uid } }
+            - name: HF_HOME
+              value: /model-cache
+            - name: HF_HUB_CACHE
+              value: /model-cache/.model-express/cache
+          volumeMounts:
+            - mountPath: /model-cache
+              name: model-cache
+        volumes:
+          - name: model-cache
+            persistentVolumeClaim:
+              claimName: model-cache
+
+    ModelExpress:
+      componentType: frontend
+      replicas: 1
+      envFromSecret: hf-token-secret
+      resources:
+        limits:   { cpu: "4", memory: 16Gi }
+        requests: { cpu: "1", memory: 4Gi }
+      livenessProbe:
+        tcpSocket: { port: 8000 }
+        initialDelaySeconds: 120
+        periodSeconds: 30
+        timeoutSeconds: 10
+        failureThreshold: 10
+      readinessProbe:
+        tcpSocket: { port: 8000 }
+        initialDelaySeconds: 60
+        periodSeconds: 15
+        timeoutSeconds: 10
+        failureThreshold: 10
+      extraPodSpec:
+        imagePullSecrets:
+          - name: nvcr-imagepullsecret
+        mainContainer:
+          image: nvcr.io/nvidia/ai-dynamo/modelexpress-server:0.3.0
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              echo "Starting Model Express Server..."
+              ./modelexpress-server &
+              SERVER_PID=$!
+
+              mkdir -p $MODEL_CACHE_PATH /model-cache/.model-express
+              cat > /model-cache/.model-express/config.yaml << EOF
+              local_path: $MODEL_CACHE_PATH
+              server_endpoint: http://localhost:8000
+              timeout_secs: null
+              EOF
+
+              for i in $(seq 1 60); do
+                if ./modelexpress-cli --endpoint http://localhost:8000 health > /dev/null 2>&1; then
+                  echo "Server is ready"
+                  break
+                fi
+                sleep 2
+              done
+
+              echo "Downloading $MODEL_NAME ..."
+              ./modelexpress-cli --endpoint http://localhost:8000 \
+                --cache-path $MODEL_CACHE_PATH \
+                model download "$MODEL_NAME"
+
+              SNAPSHOT_DIR=$(ls -td $MODEL_CACHE_PATH/models--$(echo $MODEL_NAME | sed 's|/|--|g')/snapshots/*/ 2>/dev/null | head -1)
+              if [ -n "$SNAPSHOT_DIR" ]; then
+                SNAPSHOTS_PARENT=$(dirname "$SNAPSHOT_DIR")
+                ln -sfn "$(basename "$SNAPSHOT_DIR")" "$SNAPSHOTS_PARENT/latest"
+              fi
+
+              wait $SERVER_PID
+          env:
+            - name: MODEL_EXPRESS_SERVER_PORT
+              value: "8000"
+            - name: MODEL_EXPRESS_LOGGING_LEVEL
+              value: info
+            - name: MODEL_EXPRESS_CACHE_DIRECTORY
+              value: /model-cache/.model-express/cache
+            - name: MX_METADATA_BACKEND
+              value: redis
+            - name: REDIS_URL
+              value: redis://redis-master.default.svc.cluster.local:6379
+            - name: MODEL_NAME
+              value: nvidia/Kimi-K2.5-NVFP4
+            - name: MODEL_CACHE_PATH
+              value: /model-cache/.model-express/cache
+            - name: HF_HUB_CACHE
+              value: /model-cache/.model-express/cache
+            - name: HF_XET_HIGH_PERFORMANCE
+              value: "1"
+          volumeMounts:
+            - mountPath: /model-cache
+              name: model-cache
+        volumes:
+          - name: model-cache
+            persistentVolumeClaim:
+              claimName: model-cache
+
+    agg:
+      componentType: worker
+      replicas: 1
+      # 2-node multinode worker, TP=8 + PP=2. Identical to parity DGD engine config.
+      # Grove injects --nnodes / --node-rank / --dist-init-addr.
+      multinode:
+        nodeCount: 2
+      envFromSecret: hf-token-secret
+      resources:
+        limits:   { gpu: "8" }
+        requests: { gpu: "8" }
+      sharedMemory:
+        size: 80Gi
+      extraPodSpec:
+        hostNetwork: true
+        dnsPolicy: ClusterFirstWithHostNet
+        imagePullSecrets:
+          - name: nvcr-imagepullsecret
+        nodeSelector:
+          cloud.google.com/gke-accelerator: nvidia-rtx-pro-6000
+        tolerations:
+          - key: nvidia.com/gpu
+            operator: Exists
+            effect: NoSchedule
+          - key: cloud.google.com/gke-spot
+            operator: Exists
+            effect: NoSchedule
+          - key: cloud.google.com/gke-preemptible
+            operator: Exists
+            effect: NoSchedule
+        mainContainer:
+          image: nvcr.io/nvidia/ai-dynamo/sglang-runtime:1.1.0
+          workingDir: /workspace
+          securityContext:
+            runAsUser: 0
+          startupProbe:
+            httpGet: { path: /live, port: 9090 }
+            periodSeconds: 60
+            timeoutSeconds: 5
+            failureThreshold: 60
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              MODEL_NAME=nvidia/Kimi-K2.5-NVFP4
+              MODEL_DIR=/model-cache/.model-express/cache/models--$(echo $MODEL_NAME | sed 's|/|--|g')/snapshots/latest
+              # 2026-05-22: SERVED_NAME=lowercase was a workaround for
+              # --dyn-chat-processor sglang case-sensitivity — but that flag is
+              # currently disabled (see Frontend.args above). With default Rust
+              # routing, case-insensitive lookup works; use MODEL_NAME directly.
+              # If --dyn-chat-processor sglang is ever re-enabled, restore the
+              # SERVED_NAME=lowercase workaround:
+              #   SERVED_NAME=$(echo "$MODEL_NAME" | tr 'A-Z' 'a-z')
+
+              echo "Waiting for model snapshot at $MODEL_DIR ..."
+              for i in $(seq 1 1800); do
+                if [ -f "$MODEL_DIR/config.json" ]; then
+                  echo "Model snapshot ready."
+                  break
+                fi
+                sleep 2
+              done
+              if [ ! -f "$MODEL_DIR/config.json" ]; then
+                echo "ERROR: model snapshot not found at $MODEL_DIR"
+                exit 1
+              fi
+
+              # Engine launch — matches Google's NVFP4 reference flag-for-flag.
+              # Only the Frontend router mode differs (random instead of kv) — see Frontend.args above.
+              #
+              # Experiment timeline:
+              #
+              # 2026-05-21 — Worker-side overhead experiment (per engineer comment):
+              #   1. Removed --enable-metrics            (per-step Prometheus updates)
+              #   2. Removed --log-level info            (per-step INFO logging)
+              #   3. Added   --use-sglang-tokenizer      (skip Dynamo's tokenizer wrapper)
+              #   Result: TTFT collapsed (33s P50 -> 440ms P50) BUT --use-sglang-tokenizer
+              #   broke locked-OSL enforcement (min_tokens/ignore_eos not honored) and
+              #   broke aiperf token-count metrics. Run not directly comparable.
+              #
+              # 2026-05-22 — Migrated to FRONTEND-side processor (recommended path):
+              #   Removed:  --use-sglang-tokenizer       (was on worker, now obsolete here)
+              #   Added on Frontend (see Frontend.args block above):
+              #     --dyn-chat-processor sglang          (same SGLang preprocessing,
+              #                                           done on Frontend instead)
+              #   Rationale: Frontend still pre-validates payload (locked OSL works) AND
+              #   still emits token-count metrics (aiperf works) AND is compatible with
+              #   --router-mode kv. Reference:
+              #   https://github.com/ai-dynamo/dynamo/blob/main/docs/backends/sglang/sglang-reference-guide.md
+              #
+              # Hypothesis: closes some of the ~7% Dynamo-wrapper gap measured in the
+              # standalone-v0.5.10.post1 (3,971 tok/s) vs Dynamo parity (3,690 tok/s) A/B
+              # while preserving locked OSL methodology for a valid throughput comparison.
+              # Original lines from prior runs, kept for traceability — DO NOT uncomment
+              # in the bash continuation below (would break the multi-line command):
+              #   --enable-metrics \
+              #   --log-level info \
+              #   --use-sglang-tokenizer \      <- moved to Frontend as --dyn-chat-processor sglang
+              exec python3 -m dynamo.sglang \
+                --model-path "$MODEL_DIR" \
+                --served-model-name "$MODEL_NAME" \
+                --trust-remote-code \
+                --tensor-parallel-size 8 \
+                --pipeline-parallel-size 2 \
+                --dp-size 8 \
+                --enable-dp-attention \
+                --quantization modelopt_fp4 \
+                --disable-shared-experts-fusion \
+                --mem-fraction-static 0.82 \
+                --schedule-policy fcfs \
+                --chunked-prefill-size 16384 \
+                --kv-cache-dtype bfloat16 \
+                --reasoning-parser kimi_k2 \
+                --tool-call-parser kimi_k2 \
+                --enable-dp-lm-head \
+                --enable-fused-moe-sum-all-reduce \
+                --disable-radix-cache \
+                --fp4-gemm-backend flashinfer_cutlass \
+                --attention-backend flashinfer \
+                --moe-runner-backend flashinfer_cutlass \
+                --enable-flashinfer-allreduce-fusion \
+                --disable-custom-all-reduce \
+                --host 0.0.0.0 \
+                --watchdog-timeout 3600
+          env:
+            - name: POD_UID
+              valueFrom: { fieldRef: { fieldPath: metadata.uid } }
+            - name: HF_HOME
+              value: /model-cache
+            - name: HF_HUB_CACHE
+              value: /model-cache/.model-express/cache
+            - name: MODEL_CACHE_PATH
+              value: /model-cache/.model-express/cache
+            - name: MODEL_EXPRESS_URL
+              value: http://agg-sglang-kimi-k25-nvfp4-modelexpress:8000
+            - name: TRITON_CACHE_DIR
+              value: /model-cache/.triton-cache
+            - name: NCCL_DEBUG
+              value: INFO
+            - name: NCCL_SOCKET_IFNAME
+              value: "eth0,eth1"
+            - name: NCCL_IB_DISABLE
+              value: "1"
+            - name: NCCL_P2P_LEVEL
+              value: SYS
+            - name: NCCL_SOCKET_NTHREADS
+              value: "8"
+            - name: NCCL_NSOCKS_PERTHREAD
+              value: "8"
+            - name: NCCL_MIN_NCHANNELS
+              value: "8"
+            - name: NCCL_ALLOC_P2P_NET_LL_BUFFERS
+              value: "1"
+            - name: SGLANG_ENABLE_JIT_DEEPGEMM
+              value: "0"
+            - name: SGLANG_ENABLE_DEEP_GEMM
+              value: "0"
+            - name: OMP_NUM_THREADS
+              value: "24"
+            - name: SGLANG_SET_CPU_AFFINITY
+              value: "1"
+            - name: SAFETENSORS_FAST_GPU
+              value: "1"
+            - name: PYTORCH_CUDA_ALLOC_CONF
+              value: "expandable_segments:True"
+            - name: FLASHINFER_DISABLE_VERSION_CHECK
+              value: "1"
+          volumeMounts:
+            - mountPath: /model-cache
+              name: model-cache
+        volumes:
+          - name: model-cache
+            persistentVolumeClaim:
+              claimName: model-cache

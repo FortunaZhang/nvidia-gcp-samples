@@ -1,42 +1,16 @@
-# Dynamo aggregated deployment for Kimi K2.5 NVFP4 — GOAL 3 (Beat) optimized variant.
-# Topology: same 2-node TP=8 + PP=2 as parity baseline (Google-matching) — proven
-# memory-fitting on RTX Pro 6000. Optimization stack sits ON TOP of the engine config:
-#   1. KV events ENABLED on Frontend → Dynamo router gets real-time cache state
-#   2. Radix cache re-enabled → 98% prefix-cache hit on shared-prefix workload
-#   3. +--enable-tokenizer-batch-encode → tokenizer CPU not a bottleneck at conc=512
-#   4. +--num-continuous-decode-steps 2 → reduce per-step Python overhead at high
-#      concurrency; known +5-15% on decode-heavy workloads (OSL=8192 matches)
-#   5. --enable-symm-mem + SGLANG_MOE_NVFP4_DISPATCH=1 env were TESTED and REMOVED —
-#      both come from vsadhwani's DSV3.1 NVFP4 GAIE reference which targets B200
-#      (SM100). On our 2-node RTX Pro 6000 SM120 cluster with Ethernet-only NCCL
-#      (no NVLink/MNNVL between nodes, NCCL_IB_DISABLE=1), --enable-symm-mem caused
-#      rank-0 scheduler to die immediately after weight load (exit code -3 / SIGQUIT
-#      cascade). PyTorch SymmetricMemory needs peer-reachable GPU memory and is
-#      designed for NVL-connected topologies. SGLANG_MOE_NVFP4_DISPATCH=1 may also
-#      be SM100-gated. Both removed; keeping the safe Goal 3 optimizations only.
-#   6. --kv-cache-dtype bfloat16 (kept at Google's NVFP4 reference choice)
-#      — FP8 KV (fp8_e5m2) was tested and regressed throughput from 3,752 → 1,599
-#        on RTX Pro 6000 SM120, likely due to FlashInfer FP8 KV slow path on SM120.
-#        See README "Findings" + nkulikov reference repo for SM120-specific NVFP4
-#        kernel issues (CUTLASS garbage, FlashInfer FP4 unavailable, workarounds
-#        with Marlin GEMM / Triton MoE for very large MoE models).
-#   6. mem-fraction-static 0.82 (matches parity baseline; bumping to 0.87 left only
-#      13% dynamic budget which OOM'd FlashInfer FP4 MoE workspaces during init)
-# Note: --cuda-graph-max-bs left at SGLang default (~512) for full graph coverage.
+# Dynamo aggregated deployment for Kimi K2.5 NVFP4 — optimized variant.
 #
-# Single-node × 2 replicas (PP=1) was attempted to unlock MTP/NEXTN. ABANDONED —
-# Kimi K2.5 NVFP4 weights consume 92.41 GB per GPU at TP=8 single-node (verified
-# in pod logs), leaving no room for KV pool at any mem-fraction. NEXTN adds another
-# 10-15 GB, making it doubly impossible. See README "Findings — single-node
-# topology not viable" and ../kimi-k25-int4-mn/debug.md #4 for the SGLang PP+spec
-# assertion that originally motivated trying PP=1.
+# Topology: 2-node TP=8 + PP=2 (same as the parity baseline / Standalone reference).
+# Engine config matches the parity DGD; the optimization stack adds Dynamo-side
+# capabilities for shared-prefix workloads:
+#   1. KV events ENABLED on Frontend → Dynamo router sees real-time cache state
+#   2. Radix cache enabled → high prefix-cache hit on shared-prefix workloads
+#   3. --enable-tokenizer-batch-encode → tokenizer CPU not a bottleneck at high concurrency
+#   4. --num-continuous-decode-steps 2 → reduce per-step Python overhead at high concurrency
+#   5. --kv-cache-dtype bfloat16 + --mem-fraction-static 0.82 (matches parity baseline)
 #
-# Expected throughput vs Goal 2 parity (3,752 tok/s): +15-25% from FP8 KV alone,
-# plus modest gains from radix cache + KV router on shared-prefix workload.
-# Realistic target: 4,300-4,700 tok/s. Vs Google 3,237 reference: +33-45%.
-#
-# Run with run-benchmark-opt.sh (shared-prefix workload) for full Goal 3 effect.
-# Same DGD name as baseline → swap with kubectl delete + apply.
+# Apply with a shared-prefix benchmark workload to see Dynamo's KV-aware routing benefit.
+# Same DGD name as the parity baseline → swap with kubectl delete + apply.
 ---
 apiVersion: nvidia.com/v1alpha1
 kind: DynamoGraphDeployment
@@ -58,8 +32,7 @@ spec:
             - -m
             - dynamo.frontend
             - --router-mode
-            - kv
-            # --no-kv-events REMOVED → KV events enabled (Goal 3 lever)
+            - kv                  # KV-aware routing (events enabled by default)
           env:
             - name: POD_UID
               valueFrom: { fieldRef: { fieldPath: metadata.uid } }
@@ -165,10 +138,6 @@ spec:
       componentType: worker
       replicas: 1
       # 2-node PP=2 single distributed worker — same topology as the parity baseline.
-      # Single-node × 2 replicas was attempted (PP=1) to unlock MTP/NEXTN, but Kimi
-      # K2.5 NVFP4 on TP=8 single-node consumes 92.41 GB per GPU (verified in pod
-      # logs), leaving no room for KV pool at any mem-fraction setting. See README
-      # "Findings — single-node topology not viable" for the memory math.
       multinode:
         nodeCount: 2
       envFromSecret: hf-token-secret
@@ -203,9 +172,8 @@ spec:
             httpGet: { path: /live, port: 9090 }
             periodSeconds: 60
             timeoutSeconds: 5
-            # 120 × 60s = 120 min. CUDA graph capture for Kimi NVFP4 with FP8 KV
-            # + DP attention + 60+ batch sizes can take 60-90+ min. Previous 60-min
-            # threshold was killing the leader before capture finished.
+            # 120 × 60s = 120 min. CUDA graph capture for Kimi NVFP4 + DP attention
+            # across many batch sizes can take 60-90+ minutes.
             failureThreshold: 120
           command: ["/bin/sh", "-c"]
           args:
@@ -226,7 +194,7 @@ spec:
                 exit 1
               fi
 
-              # SGLang launch — Goal 3 optimized: 2-node PP=2 (matches Google topology)
+              # SGLang launch — same 2-node PP=2 topology as the parity baseline.
               # + stacked optimizations on top of the parity baseline:
               #   - fp8_e5m2 KV cache (halves per-token KV → 2× effective concurrency)
               #   - mem-fraction 0.82 → 0.87 (~15% more KV pool)

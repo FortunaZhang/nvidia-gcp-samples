@@ -1,36 +1,17 @@
-# Dynamo parity DGD with random router (no KV-aware routing).
-# Use this for the clean Goal 2 (Dynamo-vs-Standalone parity) measurement.
+# Dynamo parity DGD — single replica with --router-mode random.
 #
-# WHY RANDOM ROUTER:
-# At single-instance (replicas=1), KV-aware routing has no value — there's only
-# one worker to route to. Setting --router-mode kv adds compute overhead on every
-# request (prefix-overlap lookup) for a degenerate choice. Using --router-mode
-# random removes that router compute, isolating just the Frontend / HTTP /
-# service-mesh overhead — the cleanest Dynamo-vs-Standalone parity number.
+# Use this for the Dynamo-vs-Standalone parity comparison. Engine flags are
+# identical to the Standalone SGLang reference manifest; only the routing layer
+# differs (Dynamo Frontend wraps the engine).
 #
-# DIFFERENCE vs dgd-agg-sglang-kimi-k25-nvfp4.yaml (the legacy kv-router DGD):
-#   --router-mode kv  →  --router-mode random
-#   removed:  --no-kv-events  (irrelevant for random routing)
-#   Engine flags: IDENTICAL (same SGLang config as Google's reference manifest)
+# WHY RANDOM ROUTER AT replicas=1:
+# At single-instance, KV-aware routing has no value — there's only one worker
+# to route to. --router-mode random removes the router-side compute, isolating
+# just the Frontend HTTP layer for the parity measurement.
 #
-# DGD NAME: same as the legacy DGD (`agg-sglang-kimi-k25-nvfp4`) so the Frontend
-# service URL is unchanged — existing benchmark scripts (and the dedicated
-# run-benchmark-parity.sh) hit the same URL without modification.
-# To switch between this and the legacy kv-router DGD: tear down one, apply the
-# other. They cannot coexist (same name, same namespace).
-#
-# APPLY ORDER:
-#   kubectl delete -f dgd-agg-sglang-kimi-k25-nvfp4.yaml 2>/dev/null  # if legacy present
-#   kubectl apply  -f dgd-agg-sglang-kimi-k25-nvfp4-parity.yaml
+# APPLY:
+#   kubectl apply -f dgd-agg-sglang-kimi-k25-nvfp4-parity.yaml
 #   kubectl get pods -l nvidia.com/dynamo-graph-deployment-name=agg-sglang-kimi-k25-nvfp4 -w
-#
-# EXPECTED OUTCOME (vs Standalone SGLang same workload, aiperf no ignore_eos):
-#   Throughput: Dynamo 3-5% lower (Frontend overhead only, no KV router compute)
-#   TTFT P50: within 100 ms of Standalone
-#   TTFT P99: similar
-#   ITL P50/P99: similar (Dynamo may win P99 marginally from DP balancing)
-#
-# This is the answer to "is Dynamo on par with Standalone?" — Goal 2.
 ---
 apiVersion: nvidia.com/v1alpha1
 kind: DynamoGraphDeployment
@@ -53,24 +34,6 @@ spec:
             - dynamo.frontend
             - --router-mode
             - random              # KV routing has no benefit at replicas=1; use random
-            # 2026-05-22: --dyn-chat-processor sglang TESTED TWICE (with and
-            # without --tool-call-parser/--reasoning-parser kimi_k2 here) — both
-            # returned 404 on every request because the chat processor uses a
-            # model-discovery path that doesn't see the worker's standard
-            # registration. /v1/models stayed empty in both attempts even though
-            # the engine successfully registered the MDC and the kube discovery
-            # daemon saw 4 endpoints. Likely needs a Frontend-worker pairing flag
-            # not documented in sglang-chat-processor.md. Reverting to default
-            # Rust preprocessor so the parity benchmark can run.
-            # When ready to retry: add these lines back AND figure out the
-            # missing model-discovery hook (probably a Frontend-side flag like
-            # --dyn-model-discovery=mdc or an explicit --model registration).
-            #   - --dyn-chat-processor
-            #   - sglang
-            #   - --tool-call-parser
-            #   - kimi_k2
-            #   - --reasoning-parser
-            #   - kimi_k2
           env:
             - name: POD_UID
               valueFrom: { fieldRef: { fieldPath: metadata.uid } }
@@ -217,13 +180,6 @@ spec:
             - |
               MODEL_NAME=nvidia/Kimi-K2.5-NVFP4
               MODEL_DIR=/model-cache/.model-express/cache/models--$(echo $MODEL_NAME | sed 's|/|--|g')/snapshots/latest
-              # 2026-05-22: SERVED_NAME=lowercase was a workaround for
-              # --dyn-chat-processor sglang case-sensitivity — but that flag is
-              # currently disabled (see Frontend.args above). With default Rust
-              # routing, case-insensitive lookup works; use MODEL_NAME directly.
-              # If --dyn-chat-processor sglang is ever re-enabled, restore the
-              # SERVED_NAME=lowercase workaround:
-              #   SERVED_NAME=$(echo "$MODEL_NAME" | tr 'A-Z' 'a-z')
 
               echo "Waiting for model snapshot at $MODEL_DIR ..."
               for i in $(seq 1 1800); do
@@ -238,37 +194,8 @@ spec:
                 exit 1
               fi
 
-              # Engine launch — matches Google's NVFP4 reference flag-for-flag.
-              # Only the Frontend router mode differs (random instead of kv) — see Frontend.args above.
-              #
-              # Experiment timeline:
-              #
-              # 2026-05-21 — Worker-side overhead experiment (per engineer comment):
-              #   1. Removed --enable-metrics            (per-step Prometheus updates)
-              #   2. Removed --log-level info            (per-step INFO logging)
-              #   3. Added   --use-sglang-tokenizer      (skip Dynamo's tokenizer wrapper)
-              #   Result: TTFT collapsed (33s P50 -> 440ms P50) BUT --use-sglang-tokenizer
-              #   broke locked-OSL enforcement (min_tokens/ignore_eos not honored) and
-              #   broke aiperf token-count metrics. Run not directly comparable.
-              #
-              # 2026-05-22 — Migrated to FRONTEND-side processor (recommended path):
-              #   Removed:  --use-sglang-tokenizer       (was on worker, now obsolete here)
-              #   Added on Frontend (see Frontend.args block above):
-              #     --dyn-chat-processor sglang          (same SGLang preprocessing,
-              #                                           done on Frontend instead)
-              #   Rationale: Frontend still pre-validates payload (locked OSL works) AND
-              #   still emits token-count metrics (aiperf works) AND is compatible with
-              #   --router-mode kv. Reference:
-              #   https://github.com/ai-dynamo/dynamo/blob/main/docs/backends/sglang/sglang-reference-guide.md
-              #
-              # Hypothesis: closes some of the ~7% Dynamo-wrapper gap measured in the
-              # standalone-v0.5.10.post1 (3,971 tok/s) vs Dynamo parity (3,690 tok/s) A/B
-              # while preserving locked OSL methodology for a valid throughput comparison.
-              # Original lines from prior runs, kept for traceability — DO NOT uncomment
-              # in the bash continuation below (would break the multi-line command):
-              #   --enable-metrics \
-              #   --log-level info \
-              #   --use-sglang-tokenizer \      <- moved to Frontend as --dyn-chat-processor sglang
+              # Engine launch — matches the Standalone SGLang reference flag-for-flag.
+              # Only the Frontend router mode differs (random vs kv) — see Frontend.args above.
               exec python3 -m dynamo.sglang \
                 --model-path "$MODEL_DIR" \
                 --served-model-name "$MODEL_NAME" \

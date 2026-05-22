@@ -4,9 +4,8 @@
 # distributed SGLang worker (StatefulSet replicas=2 = the two pods of that worker).
 #
 # Why 2 nodes when NVFP4 (~370 GB) fits on 1: 2× KV cache pool capacity for OSL=8192
-# / conc=512 workloads. This matches Google's reference and is the apples-to-apples
-# Goal 1 / Goal 2 baseline. The optimized Dynamo variant (dgd-...-optimized.yaml)
-# trades this topology for 2 single-node replicas + MTP/NEXTN to push past 3,237.
+# / conc=512 workloads, matching Google's reference topology for apples-to-apples
+# comparison with both the Standalone reference and the Dynamo parity DGD.
 ---
 apiVersion: apps/v1
 kind: StatefulSet

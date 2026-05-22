@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Clean Dynamo-vs-Standalone parity test (apples-to-apples for Goal 2).
+# Dynamo-vs-Standalone parity benchmark — apples-to-apples comparison.
 #
 # WHY THIS SCRIPT EXISTS:
 # To answer "is Dynamo on par with Standalone SGLang at single-instance?" without
@@ -13,12 +13,6 @@
 #   - deterministic sampling     (temperature=0, rep_penalty=1.0, random-seed=100)
 #   - same engine config         (Standalone manifest = Dynamo DGD engine flags)
 # Any leftover delta is Dynamo's Frontend / service-mesh / router overhead.
-#
-# NOTE on methodology choice (locked vs variable OSL):
-#   For Goal 2 (Dynamo-vs-Standalone parity on OUR cluster), LOCKED OSL is the
-#   cleaner test -- removes EOS variance, makes overhead visible.
-#   For Goal 1 (Standalone vs Google reference), use VARIABLE OSL via
-#   `run-benchmark-natural-eos.sh standalone` -- matches Google's methodology.
 #
 # PREREQUISITES:
 #   1. Dynamo parity DGD applied (random router):
@@ -39,23 +33,11 @@
 #   ./run-benchmark-parity.sh <full-url>                 # custom endpoint
 #
 # Run both targets sequentially (don't overlap on same cluster).
-# Each run ~21-35 min wall time (depends on OSL distribution).
+# Each run ~21-35 min wall time.
 #
-# EXPECTED OUTCOME:
-#   Standalone TPS:  ~2,700-3,000 tok/s (lower than Google's 3,237 because aiperf
-#                    synthetic prompts cause earlier EOS than bench_serving prompts;
-#                    OSL achieved ~2,000-2,500 tokens vs Google's 4,189)
-#   Dynamo TPS:      ~3-5% lower than Standalone aiperf (Frontend overhead only)
-#   TTFT P50:        within 100 ms between the two
-#   ITL P99:         Dynamo possibly wins marginally from DP load-balancing
-#   OSL achieved:    similar on both sides (same prompts -> same EOS distribution)
-#
-# Any throughput delta > 7% means investigate (engine version drift, router
-# overhead unexpectedly high, queue contention, etc).
-#
-# Note: this is NOT directly comparable to Google's published 3,237 tok/s (Google
-# used bench_serving prompts). For Google-comparable Standalone numbers see
-# run-benchmark-natural-eos.sh standalone (uses bench_serving harness).
+# Note: this aiperf-based parity run is NOT directly comparable to Google's published
+# 3,237 tok/s number (Google used bench_serving). Use this for Dynamo-vs-Standalone
+# apples-to-apples; for Google-comparable Standalone numbers, use bench_serving.
 
 set -euo pipefail
 

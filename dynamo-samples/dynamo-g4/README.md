@@ -59,11 +59,11 @@ Workload: ISL=1024, OSL=8192, conc=512, 1,536 prompts. **bold** = directly compa
 | **NVIDIA Standalone** (matches Google methodology) | `lmsysorg/sglang:dev-cu13` | bench_serving, variable OSL | **3,374 tok/s** (+4.2%) | **288 ms** (-5%) | **118 ms** (-2.5%) |
 | **NVIDIA Standalone (fixed-OSL baseline)** ← Dynamo apples-to-apples reference | `lmsysorg/sglang:v0.5.10.post1` | aiperf, **locked OSL=8192** | **3,971 tok/s** | 14,781 ms | 122.6 ms |
 | Dynamo parity — work in progress | `v0.5.10.post1` (bundled in `sglang-runtime:1.1.0`) | aiperf, locked OSL=8192 | — | — | — |
-| Dynamo optimized — work in progress (best so far: aiperf, 80% shared prefix) | `v0.5.10.post1` (bundled in `sglang-runtime:1.1.0`) | aiperf, locked OSL=8192 | **3,759 tok/s** (+16.1% vs Google) | — (warmup-excluded; P99 = 8,905 ms, **3.37× lower** than Google) | 127.4 ms |
+| Dynamo optimized — work in progress | `v0.5.10.post1` (bundled in `sglang-runtime:1.1.0`) | aiperf, locked OSL=8192, shared-prefix workload | — | — | — |
 
 *SGLang version note*: The Standalone fixed-OSL baseline (row 3) is intentionally pinned to `v0.5.10.post1` — the same SGLang version bundled in Dynamo's certified `sglang-runtime:1.1.0` image — so the Dynamo parity comparison (row 4) holds the SGLang code constant and isolates the wrapper effect from upstream SGLang version drift. Rows 1-2 use the rolling `dev-cu13` tag to match Google's published methodology.
 
 **Reading guide:**
 - **Goal 1** (NVIDIA Standalone vs Google): direct apples-to-apples — both use `bench_serving` + variable OSL. NVIDIA Standalone matches and slightly exceeds Google's reference on every metric.
 - **Goal 2** (Dynamo parity vs NVIDIA Standalone fixed-OSL baseline): work in progress. Both runs use `aiperf` + locked OSL + the same SGLang version that's bundled in Dynamo's certified runtime image, so the comparison isolates the Dynamo wrapper from engine config differences.
-- **Goal 3** (Dynamo optimized): work in progress. Best aiperf result so far at 80% shared prefix is +16.1% TPS vs Google with TTFT P99 3.37× lower and ITL P99 1.99× lower than Google's reference. Dynamo's full value-add is most visible at multi-replica with KV-aware routing on shared-prefix workloads — multi-replica testing planned.
+- **Goal 3** (Dynamo optimized): work in progress. Dynamo's primary value-add is at multi-replica with KV-aware routing on shared-prefix workloads (multi-turn agents, long-context tools, repeated system prompts) — multi-replica testing is the next milestone.

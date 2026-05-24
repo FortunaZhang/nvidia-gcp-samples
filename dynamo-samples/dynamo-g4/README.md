@@ -53,13 +53,13 @@ Google's published Kimi K2.5 NVFP4 reference: <https://github.com/shivajid/sglan
 
 Workload: ISL=1024, OSL=8192, conc=512, 1,536 prompts. **bold** = directly comparable column.
 
-| Variant | SGLang version | Benchmark / OSL | Throughput | ITL P50 |
-|---|---|---|---|---|
-| Google Standalone (published reference) | `lmsysorg/sglang:dev-cu13` | bench_serving, variable OSL | 3,237 tok/s | 121 ms |
-| **NVIDIA Standalone** (matches Google methodology) | `lmsysorg/sglang:dev-cu13` | bench_serving, variable OSL | **3,374 tok/s** (+4.2%) | **118 ms** (-2.5%) |
-| **NVIDIA Standalone (fixed-OSL baseline)** ← Dynamo apples-to-apples reference | `lmsysorg/sglang:v0.5.10.post1` | aiperf, **locked OSL=8192** | **3,971 tok/s** | 122.6 ms |
-| Dynamo parity — partially completed | `v0.5.10.post1` (bundled in `sglang-runtime:1.1.0`) | aiperf, locked OSL=8192 | 3,723 tok/s | 128.0 ms |
-| Dynamo optimized — work in progress | `v0.5.10.post1` (bundled in `sglang-runtime:1.1.0`) | aiperf, locked OSL=8192, shared-prefix workload | — | — |
+| Variant | SGLang version | Benchmark / OSL | Output Throughput (tok/s) | Total Throughput (tok/s) | ITL P50 |
+|---|---|---|---|---|---|
+| Google Standalone (published reference) | `lmsysorg/sglang:dev-cu13` | bench_serving, variable OSL | 3,237 | 3,632 | 121 ms |
+| **NVIDIA Standalone** (matches Google methodology) | `lmsysorg/sglang:dev-cu13` | bench_serving, variable OSL | **3,374** (+4.2%) | **~3,786** | **118 ms** (-2.5%) |
+| **NVIDIA Standalone (fixed-OSL baseline)** ← Dynamo apples-to-apples reference | `lmsysorg/sglang:v0.5.10.post1` | aiperf, **locked OSL=8192** | **3,971** | **4,480** | 122.6 ms |
+| Dynamo parity — partially completed | `v0.5.10.post1` (bundled in `sglang-runtime:1.1.0`) | aiperf, locked OSL=8192 | 3,723 | 4,200 | 128.0 ms |
+| Dynamo optimized — work in progress | `v0.5.10.post1` (bundled in `sglang-runtime:1.1.0`) | aiperf, locked OSL=8192, shared-prefix workload | — | — | — |
 
 *SGLang version note*: The Standalone fixed-OSL baseline (row 3) is intentionally pinned to `v0.5.10.post1` — the same SGLang version bundled in Dynamo's certified `sglang-runtime:1.1.0` image — so the Dynamo parity comparison (row 4) holds the SGLang code constant and isolates the wrapper effect from upstream SGLang version drift. Rows 1-2 use the rolling `dev-cu13` tag to match Google's published methodology.
 

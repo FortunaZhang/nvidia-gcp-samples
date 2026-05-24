@@ -56,7 +56,7 @@ Workload: ISL=1024, OSL=8192, conc=512, 1,536 prompts. **bold** = directly compa
 | Variant | SGLang version | Benchmark / OSL | Output Throughput (tok/s) | Total Throughput (tok/s) | ITL P50 |
 |---|---|---|---|---|---|
 | Google Standalone (published reference) | `lmsysorg/sglang:dev-cu13` | bench_serving, variable OSL | 3,237 | 3,632 | 121 ms |
-| **NVIDIA Standalone** (matches Google methodology) | `lmsysorg/sglang:dev-cu13` | bench_serving, variable OSL | **3,374** (+4.2%) | **~3,786** | **118 ms** (-2.5%) |
+| **NVIDIA Standalone** (matches Google methodology) | `lmsysorg/sglang:dev-cu13` | bench_serving, variable OSL | **3,374** (+4.2%) | **~3,786** (+4.2%) | **118 ms** (-2.5%) |
 | **NVIDIA Standalone (aiperf fixed-OSL baseline)** ← Dynamo apples-to-apples reference | `lmsysorg/sglang:v0.5.10.post1` | aiperf, **locked OSL=8192** | **3,971** | **4,480** | 122.6 ms |
 | Dynamo parity — completed | `v0.5.10.post1` (bundled in `sglang-runtime:1.1.0`) | aiperf, locked OSL=8192 | 3,723 | 4,200 | 128.0 ms |
 | Dynamo optimized — work in progress | `v0.5.10.post1` (bundled in `sglang-runtime:1.1.0`) | aiperf, locked OSL=8192, shared-prefix workload | — | — | — |

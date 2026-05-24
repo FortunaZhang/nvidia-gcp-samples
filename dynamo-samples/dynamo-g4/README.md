@@ -66,4 +66,4 @@ Workload: ISL=1024, OSL=8192, conc=512, 1,536 prompts. **bold** = directly compa
 **Reading guide:**
 - **Goal 1** (NVIDIA Standalone vs Google): direct apples-to-apples — both use `bench_serving` + variable OSL. NVIDIA Standalone matches and slightly exceeds Google's reference on every metric.
 - **Goal 2** (Dynamo parity vs NVIDIA Standalone fixed-OSL baseline): completed. Both runs use `aiperf` + locked OSL + the same SGLang version that's bundled in Dynamo's certified runtime image, so the comparison isolates the Dynamo wrapper from engine config differences. Throughput within ~6% of the baseline.
-- **Goal 3** (Dynamo optimized): work in progress. Dynamo's primary value-add is the KV-aware router + radix cache on shared-prefix workloads (multi-turn agents, repeated system prompts, long-context tools), which is the next focus.
+- **Goal 3** (Dynamo optimized): work in progress. Dynamo's primary value-add is the KV-aware router + radix cache on shared-prefix workloads, which is the next focus.

@@ -10,7 +10,8 @@ NVIDIA Dynamo + SGLang reference deployment for **Kimi K2.5 NVFP4** on Google Cl
 | `dgd-agg-sglang-kimi-k25-nvfp4-parity.yaml` | Dynamo aggregated DGD — same engine flags as Standalone, `--router-mode random` (KV routing has no benefit at 1 replica) |
 | `dgd-agg-sglang-kimi-k25-nvfp4-optimized.yaml` | Dynamo aggregated DGD with KV-aware routing, radix cache, KV events for shared-prefix workloads |
 | `run-benchmark-parity.sh` | aiperf-based parity benchmark — same workload to both Standalone and Dynamo endpoints, locked OSL, deterministic sampling |
-| `benchmark-kimi-k25-nvfp4-pod.yaml` | aiperf client pod (runs `run-benchmark-parity.sh` against either endpoint) |
+| `run-benchmark-optimized-shared.sh` | Sample shared-prefix benchmark (default 80% shared, configurable via `SHARED_PERCENT`) for the optimized Dynamo DGD |
+| `benchmark-kimi-k25-nvfp4-pod.yaml` | aiperf client pod (runs the benchmark scripts against either endpoint) |
 
 ## Topology
 

@@ -200,6 +200,7 @@ spec:
                 --tool-call-parser kimi_k2 \
                 --mem-fraction-static 0.85 \
                 --chunked-prefill-size 16384 \
+                --disable-radix-cache \
                 --host 0.0.0.0 \
                 --watchdog-timeout 3600
           env:

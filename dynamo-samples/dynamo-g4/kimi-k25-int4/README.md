@@ -67,7 +67,7 @@ Workload: ISL=1024, OSL=8192, conc=512, 1,536 prompts. **bold** = directly compa
 
 *OSL methodology note*: Google's published reference uses **variable OSL** (natural EOS termination, average ~4,189 output tokens per request). The fixed-OSL baseline (row 3 above) and Dynamo parity (row 4) use **locked OSL=8,192** — every request generates exactly 8,192 output tokens — which exposes Dynamo wrapper overhead clearly but is not directly comparable to Google's variable-OSL number.
 
-*Methodology note for Dynamo parity (row 4)*: Engine flags are identical to the Standalone baseline (row 3), Dynamo Frontend uses `--router-mode random` (KV routing has no benefit at replicas=1), and the worker explicitly sets `--disable-radix-cache` so the wrapper effect is isolated from engine cache state. Apples-to-apples: same engine, same workload, fresh pods for both runs.
+*Methodology note for Dynamo parity (row 4)*: Engine flags are identical to the Standalone baseline (row 3), Dynamo Frontend uses `--router-mode random`, and the worker explicitly sets `--disable-radix-cache` so the wrapper effect is isolated from engine cache state. 
 
 **Reading guide:**
 - **Goal 1** (NVIDIA Standalone vs Google): direct apples-to-apples — both use `bench_serving` + variable OSL on the same SGLang version and engine config. NVIDIA Standalone matches and exceeds Google's published numbers on every metric.

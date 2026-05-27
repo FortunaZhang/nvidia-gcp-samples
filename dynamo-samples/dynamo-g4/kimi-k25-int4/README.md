@@ -11,7 +11,7 @@ NVIDIA Dynamo + SGLang reference deployment for **Kimi K2.5 Native INT4** on Goo
 | `dgd-agg-sglang-kimi-k25-int4-optimized.yaml` | **Template (work in progress)** — Dynamo aggregated DGD with KV-aware routing, radix cache, KV events for shared-prefix workloads. Not yet validated for production; use as a starting point and tune for your workload. |
 | `run-benchmark-natural-eos.sh` | bench_serving / aiperf with **variable OSL** (natural EOS termination) — matches Google's published methodology, direct apples-to-apples comparison |
 | `run-benchmark-parity.sh` | aiperf-based parity benchmark — locked OSL=8192, random workload, deterministic sampling (NVIDIA baseline + Dynamo parity comparison) |
-| `run-benchmark-opt-shared.sh` | **Template (work in progress)** — sample shared-prefix benchmark (default 80% shared, configurable via `SHARED_PERCENT`) for the optimized Dynamo DGD. Use to explore the latency-vs-throughput trade-off; tune workload to your real distribution. |
+| `run-benchmark-optimized-shared.sh` | **Template (work in progress)** — sample shared-prefix benchmark (default 80% shared, configurable via `SHARED_PERCENT`) for the optimized Dynamo DGD. Use to explore the latency-vs-throughput trade-off; tune workload to your real distribution. |
 | `benchmark-kimi-k25-int4-pod.yaml` | aiperf client pod (runs the benchmark scripts against either endpoint) |
 
 ## Topology

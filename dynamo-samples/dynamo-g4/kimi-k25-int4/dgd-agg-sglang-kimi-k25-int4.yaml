@@ -1,10 +1,8 @@
-# Dynamo aggregated deployment for Kimi K2.5 Native INT4 — multi-NIC g4-dynamo-mn cluster.
-# Same shape as g4-dynamo recipe; differences for the multi-NIC + jumbo + local NVMe cluster:
-#   - Worker uses hostNetwork: true to inherit eth0 + eth1 from the host (matches the
-#     Google reference standalone topology). NCCL_SOCKET_IFNAME=eth0,eth1 then engages
-#     both gVNICs for cross-node PP send/recv.
-#   - Filestore RWX PVC must be on a StorageClass that targets g4-dynamo-mn-net VPC.
-# Topology unchanged: TP=8 + PP=2 across 2 nodes acting as ONE distributed worker.
+# Dynamo aggregated deployment for Kimi K2.5 Native INT4 — parity variant.
+#
+# Use this for the Dynamo-vs-Standalone parity comparison. Engine flags are
+# identical to the Standalone SGLang reference manifest; only the routing layer
+# differs (Dynamo Frontend wraps the engine). 2-node TP=8 + PP=2 worker.
 ---
 apiVersion: nvidia.com/v1alpha1
 kind: DynamoGraphDeployment
@@ -142,11 +140,8 @@ spec:
       sharedMemory:
         size: 80Gi
       extraPodSpec:
-        # hostNetwork on the GPU worker: matches the Google standalone topology so that
-        # NCCL_SOCKET_IFNAME=eth0,eth1 actually uses both gVNICs from the multi-NIC node.
-        # Pod-network mode would require networking.gke.io/interfaces annotations and
-        # only exposes eth1 if the operator propagates them — hostNetwork avoids that
-        # uncertainty and is what shivajid uses.
+        # hostNetwork on the GPU worker so NCCL_SOCKET_IFNAME=eth0,eth1 engages both
+        # gVNICs from the multi-NIC node (matches Google's standalone topology).
         hostNetwork: true
         dnsPolicy: ClusterFirstWithHostNet
         imagePullSecrets:
@@ -219,7 +214,6 @@ spec:
             - name: MODEL_EXPRESS_URL
               value: http://agg-sglang-kimi-k25-int4-modelexpress:8000
             # Filestore-backed Triton cache — shared across pods, survives restart.
-            # If you hit "Stale file handle" (debug.md #8), switch to /tmp/.triton-cache.
             - name: TRITON_CACHE_DIR
               value: /model-cache/.triton-cache
             # NCCL — same as Google reference. eth0,eth1 engages both gVNICs.
@@ -239,7 +233,6 @@ spec:
               value: "8"
             - name: NCCL_ALLOC_P2P_NET_LL_BUFFERS
               value: "1"
-            # SGLang / runtime tuning carried over from the g4-dynamo recipe.
             - name: SGLANG_ENABLE_JIT_DEEPGEMM
               value: "0"
             - name: SGLANG_ENABLE_DEEP_GEMM

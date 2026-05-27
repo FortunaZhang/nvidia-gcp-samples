@@ -1,8 +1,8 @@
-# Benchmark client pod for Kimi K2.5 Native INT4 — multi-NIC g4-dynamo-mn cluster.
-# Supports two harnesses via the three production scripts in this directory:
-#   - run-benchmark-natural-eos.sh   (Case 1: bench_serving, variable OSL — Google methodology)
-#   - run-benchmark-parity.sh        (Cases 2 & 3: aiperf, locked OSL=8192, deterministic)
-#   - run-benchmark-opt-shared.sh    (Case 4: aiperf, 80% shared prefix, locked OSL=8192)
+# Benchmark client pod for Kimi K2.5 Native INT4 — 2-node g4 (RTX PRO 6000) GKE cluster.
+# Supports two harnesses via the three benchmark scripts in this directory:
+#   - run-benchmark-natural-eos.sh   bench_serving, variable OSL — Google methodology
+#   - run-benchmark-parity.sh        aiperf, locked OSL=8192, deterministic — Dynamo parity
+#   - run-benchmark-opt-shared.sh    aiperf, 80% shared prefix, locked OSL — optimized template
 # Both aiperf and sglang.bench_serving are pre-installed by the entrypoint.
 apiVersion: v1
 kind: Pod

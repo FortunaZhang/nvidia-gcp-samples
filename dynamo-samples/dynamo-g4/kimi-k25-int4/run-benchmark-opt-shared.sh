@@ -1,23 +1,17 @@
 #!/usr/bin/env bash
-# Optimized Dynamo benchmark for Kimi K2.5 INT4 with configurable shared-prefix %.
-# Same engine config as run-benchmark-opt.sh, but lets you sweep the shared portion
-# of each request (98% / 80% / 50% / 0% etc) to find the TTFT-P99 sweet spot.
-#
-# Background — GCP_2X test (different cluster) found 80% shared beats 98% on TTFT P99
-# by ~2x (8.9s vs 17.5s) because:
-#   - more unique tokens per req (204 vs 16) keeps chunked-prefill kernels well-fed
-#   - smaller per-prefix size (820 vs 1024) reduces eviction churn at conc=512
-# This script lets us reproduce that on g4-dynamo-mn.
+# Template (work in progress) — shared-prefix benchmark for Kimi K2.5 INT4 with
+# configurable shared-prefix percentage. Pairs with the optimized Dynamo DGD
+# (KV-aware router + radix cache).
 #
 # Default harness per target (override with HARNESS=...):
-#   dynamo     -> aiperf         (radix-cache warmup methodology; primary result)
-#   standalone -> bench_serving  (matches Google methodology for shared-prefix)
+#   dynamo     -> aiperf         (radix-cache warmup methodology)
+#   standalone -> bench_serving
 #
 # Shared-prefix percentage knob (env: SHARED_PERCENT, default 80):
-#   - 98 (original Goal 3 config): 1024 prefix + 16 unique. ISL=1040.
-#   - 80 (default; GCP_2X sweet spot): 820 prefix + 204 unique. ISL=1024.
-#   - 50: 512 prefix + 512 unique. ISL=1024.
-#   - 0:  no shared prefix (1 + 1023; effectively random). ISL=1024.
+#   - 98 (max shared) : 1024 prefix + 16 unique. ISL=1040.
+#   - 80 (default)    : 820 prefix + 204 unique. ISL=1024.
+#   - 50              : 512 prefix + 512 unique. ISL=1024.
+#   - 0  (near-random): 1 + 1023.
 #   - any other value: prefix = ISL*pct/100, unique = ISL - prefix.
 #
 # Usage:
@@ -59,8 +53,8 @@ SHARED_PERCENT=${SHARED_PERCENT:-80}
 TARGET_ISL=1024
 
 case "$SHARED_PERCENT" in
-  98) PREFIX_LEN=1024; SYNTHETIC=16 ;;     # original Goal 3 (ISL=1040)
-  80) PREFIX_LEN=820;  SYNTHETIC=204 ;;    # GCP_2X sweet spot
+  98) PREFIX_LEN=1024; SYNTHETIC=16 ;;     # max shared (ISL=1040)
+  80) PREFIX_LEN=820;  SYNTHETIC=204 ;;
   50) PREFIX_LEN=512;  SYNTHETIC=512 ;;
   0)  PREFIX_LEN=1;    SYNTHETIC=1023 ;;   # near-random (aiperf requires prefix > 0)
   *)

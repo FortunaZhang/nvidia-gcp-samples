@@ -1,17 +1,10 @@
 #!/usr/bin/env bash
-# Natural-EOS benchmark for Kimi K2.5 INT4 -- matches Google reference methodology
-# exactly (variable OSL, EOS-terminated). Use this when you need an apples-to-apples
-# Dynamo-vs-Google throughput/TTFT comparison on the same workload Google ran.
+# Natural-EOS benchmark for Kimi K2.5 INT4 — matches Google reference methodology
+# (variable OSL via natural EOS termination). Use for the direct Google comparison.
 #
-# Difference vs run-benchmark.sh (locked OSL=8192, ignore_eos=true):
+# Difference vs run-benchmark-parity.sh (locked OSL=8192):
 #   - aiperf:        drops --extra-inputs ignore_eos:true
-#   - bench_serving: adds --disable-ignore-eos (this sglang version defaults ignore_eos=true)
-#
-# Expected (INT4, conc=512, 1536 reqs, ISL=1024, max OSL=8192 but natural EOS terminates):
-#   - OSL achieved avg: ~4,189 tokens (matches Google's 6,434,886 total / 1,536 reqs)
-#   - Duration: ~33 min (matches Google's 33.1 min)
-#   - Throughput: 3,200-3,400 tok/s for Dynamo (~tie with Google's 3,237 standalone)
-#   - TTFT P50: ~250-400 ms (matches Google's 304 ms standalone)
+#   - bench_serving: adds --disable-ignore-eos
 #
 # Default harness per target (override with HARNESS=...):
 #   standalone -> bench_serving (matches Google reference command exactly)

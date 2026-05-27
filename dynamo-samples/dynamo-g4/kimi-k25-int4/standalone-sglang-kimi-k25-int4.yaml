@@ -1,10 +1,7 @@
-# Raw SGLang baseline for Kimi K2.5 Native INT4 — multi-NIC g4-dynamo-mn cluster.
-# Direct mirror of https://github.com/shivajid/sglang-rtx-pro-6000/blob/main/models/KimiK2.5/sglang-ss.yaml
-# Differences from the g4-dynamo (single-NIC) version:
-#   - Storage: emptyDir for hf-cache (auto-backed by 32x local NVMe SSD via the pool's
-#     --ephemeral-storage-local-ssd=count=32 flag). Matches Google reference exactly.
-#   - hostNetwork: true (unchanged) — host already has eth0 + eth1 from the multi-NIC pool,
-#     so NCCL_SOCKET_IFNAME=eth0,eth1 actually engages both gVNICs. No pod annotations needed.
+# Raw SGLang baseline for Kimi K2.5 Native INT4 — 2-node g4 (RTX PRO 6000) GKE cluster.
+# Mirrors https://github.com/shivajid/sglang-rtx-pro-6000/blob/main/models/KimiK2.5/sglang-ss.yaml
+# flag-for-flag. Topology: TP=8 + PP=2 across 2 g4-standard-384 nodes as one distributed
+# SGLang worker (StatefulSet replicas=2 = the two pods of that worker).
 ---
 apiVersion: apps/v1
 kind: StatefulSet

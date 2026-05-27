@@ -1,28 +1,16 @@
-# Dynamo aggregated deployment for Kimi K2.5 Native INT4 — GOAL 3 (Beat) variant.
-# Optimized config to outperform standalone SGLang on a shared-prefix workload.
-# Same DGD name as baseline → swap by: kubectl delete -f dgd-agg-sglang-kimi-k25-int4.yaml
-# then kubectl apply -f dgd-agg-sglang-kimi-k25-int4-optimized.yaml
+# Dynamo aggregated deployment for Kimi K2.5 Native INT4 — optimized variant
+# (Template: work in progress — not yet validated for production).
 #
-# Changes from baseline:
-#   Frontend:
-#     - removed --no-kv-events → KV events ENABLED. Live worker-side cache state
-#       signal to the router for smarter prefix-aware routing decisions.
-#   agg worker engine:
-#     - --mem-fraction-static 0.87 — validated working point on this cluster/workload.
-#       0.85 (shivajid baseline) also works but leaves more KV pressure.
-#       0.87 hit persistent KV retraction at conc=512 / OSL=8192 (KV pool saturated; 2,590 tok/s).
-#       0.90 was tested and FAILS — engine crashes under traffic burst (10% activation
-#       budget too tight at conc=512 with KV-events ON).
-#     - --chunked-prefill-size: kept at 16384 (32768 OOM'd activations after KV alloc)
-#     - +--enable-tokenizer-batch-encode (reduces tokenizer CPU contention at high conc)
-#     - MTP/EAGLE attempted and ABANDONED on this topology. SGLang asserts:
-#       "Pipeline parallelism is not compatible with overlap schedule, speculative
-#       decoding, mixed chunked prefill" (server_args.py:6071). TP=8+PP=2 is mandated
-#       by Kimi K2.5 INT4 weights (~630 GB) not fitting on one g4-standard-384 node.
-#       To enable MTP we would need DP=8+EP=8 single-node, which doesn't fit the
-#       model size. See debug.md #4 for the failure trace and reasoning.
-#     - (EPLB not enabled — requires --ep-size > 1 which conflicts with TP=8+PP=2
-#       on the INT4 config; left as a future lever requiring topology change)
+# Same DGD name as the parity baseline → swap with `kubectl delete -f` + `kubectl apply -f`.
+#
+# Changes vs parity:
+#   Frontend: KV events enabled (default; --no-kv-events removed) so the router
+#     gets live worker-side cache state for prefix-aware routing.
+#   Worker engine:
+#     --mem-fraction-static 0.87 (vs 0.85) — more KV pool for radix cache headroom
+#     --enable-tokenizer-batch-encode — reduces tokenizer CPU contention at high conc
+#
+# Apply with a shared-prefix benchmark workload to see the KV-aware routing benefit.
 ---
 apiVersion: nvidia.com/v1alpha1
 kind: DynamoGraphDeployment
@@ -33,10 +21,7 @@ spec:
   services:
     Frontend:
       componentType: frontend
-      replicas: 1     # Single Frontend handles conc=512 fine. Earlier 502s were
-                      # aiperf-client-side worker contention (perf pod CPU=4 starved
-                      # by 500 default Python workers), fixed by --workers-max 64 in
-                      # run-benchmark-opt.sh — not a Frontend scaling problem.
+      replicas: 1
       extraPodSpec:
         imagePullSecrets:
           - name: nvcr-imagepullsecret
@@ -210,15 +195,7 @@ spec:
                 exit 1
               fi
 
-              # SGLang launch — Goal 3 optimized config (engine tuning only).
-              # MTP/EAGLE removed: SGLang explicitly forbids PP > 1 with speculative
-              # decoding (server_args.py check_server_args asserts: "Pipeline
-              # parallelism is not compatible with overlap schedule, speculative
-              # decoding, mixed chunked prefill"). Our TP=8 + PP=2 topology is
-              # mandated by Kimi K2.5 INT4 weights (~630 GB) not fitting on one
-              # 768 GB g4-standard-384 node + KV + activations. To enable MTP we
-              # would need a topology change (e.g., DP=8 + EP=8 + single node) which
-              # is infeasible for this model size on RTX Pro 6000. See debug.md #4.
+              # SGLang launch — optimized config (engine tuning only).
               exec python3 -m dynamo.sglang \
                 --model-path "$MODEL_DIR" \
                 --served-model-name "$MODEL_NAME" \
@@ -233,11 +210,6 @@ spec:
                 --enable-tokenizer-batch-encode \
                 --host 0.0.0.0 \
                 --watchdog-timeout 3600
-              # Note: --enable-eplb requires --ep-size > 1. With TP=8 + PP=2 (no DP
-              # attention) on the INT4 config, enabling EP=8 conflicts with the
-              # existing TP slicing. EPLB removed; if you want to try expert
-              # parallelism, also set --ep-size 8 and verify Kimi K2.5 INT4 supports
-              # the combined TP+EP layout.
           env:
             - name: POD_UID
               valueFrom: { fieldRef: { fieldPath: metadata.uid } }
@@ -249,8 +221,6 @@ spec:
               value: /model-cache/.model-express/cache
             - name: MODEL_EXPRESS_URL
               value: http://agg-sglang-kimi-k25-int4-modelexpress:8000
-            # Filestore-backed Triton cache — shared across pods, survives restart.
-            # If you hit "Stale file handle" (debug.md #8), switch to /tmp/.triton-cache.
             - name: TRITON_CACHE_DIR
               value: /model-cache/.triton-cache
             # NCCL — same as Google reference. eth0,eth1 engages both gVNICs.
@@ -270,8 +240,6 @@ spec:
               value: "8"
             - name: NCCL_ALLOC_P2P_NET_LL_BUFFERS
               value: "1"
-            # SGLang / runtime tuning carried over from the g4-dynamo recipe.
-            # SGLANG_ENABLE_SPEC_V2 removed — MTP/EAGLE is not viable with PP=2 (see debug.md #4).
             - name: SGLANG_ENABLE_JIT_DEEPGEMM
               value: "0"
             - name: SGLANG_ENABLE_DEEP_GEMM

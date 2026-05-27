@@ -38,24 +38,11 @@
 #   HARNESS=aiperf ./run-benchmark-parity.sh dynamo      # explicit aiperf (same as default)
 #   ./run-benchmark-parity.sh <full-url>                 # custom endpoint
 #
-# Run both targets sequentially (don't overlap on same cluster).
-# Each run ~21-35 min wall time (depends on OSL distribution).
+# Run both targets sequentially (don't overlap on the same cluster).
 #
-# EXPECTED OUTCOME:
-#   Standalone TPS:  ~2,700-3,000 tok/s (lower than Google's 3,237 because aiperf
-#                    synthetic prompts cause earlier EOS than bench_serving prompts;
-#                    OSL achieved ~2,000-2,500 tokens vs Google's 4,189)
-#   Dynamo TPS:      ~3-5% lower than Standalone aiperf (Frontend overhead only)
-#   TTFT P50:        within 100 ms between the two
-#   ITL P99:         Dynamo possibly wins marginally from DP load-balancing
-#   OSL achieved:    similar on both sides (same prompts -> same EOS distribution)
-#
-# Any throughput delta > 7% means investigate (engine version drift, router
-# overhead unexpectedly high, queue contention, etc).
-#
-# Note: this is NOT directly comparable to Google's published 3,237 tok/s (Google
-# used bench_serving prompts). For Google-comparable Standalone numbers see
-# run-benchmark-natural-eos.sh standalone (uses bench_serving harness).
+# Note: this locked-OSL aiperf run isolates Dynamo-wrapper overhead vs Standalone
+# at identical workload — it is NOT methodology-matched to Google's published number.
+# For the Google-comparable run see run-benchmark-natural-eos.sh standalone.
 
 set -euo pipefail
 

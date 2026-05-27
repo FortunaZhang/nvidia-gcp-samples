@@ -65,7 +65,7 @@ Workload: ISL=1024, OSL=8192, conc=512, 1,536 prompts. **bold** = directly compa
 
 *SGLang version note*: NVIDIA Standalone and Dynamo runs are all pinned to `v0.5.10.post1` — the same SGLang version bundled in Dynamo's certified `sglang-runtime:1.1.0` image — so every comparison holds the SGLang code constant and isolates only the Dynamo wrapper effect.
 
-*OSL methodology note*: Google's published reference uses **variable OSL** (natural EOS termination, average ~4,189 output tokens per request). The fixed-OSL baseline (row 3 above) and Dynamo parity (row 4) use **locked OSL=8,192** — every request generates exactly 8,192 output tokens — which exposes Dynamo wrapper overhead clearly but is not directly comparable to Google's variable-OSL number. For INT4 specifically (no DP attention enabled per Google's config), per-step decode time grows with sequence depth, so locked-OSL throughput is lower than variable-OSL throughput on the same engine.
+*OSL methodology note*: Google's published reference uses **variable OSL** (natural EOS termination, average ~4,189 output tokens per request). The fixed-OSL baseline (row 3 above) and Dynamo parity (row 4) use **locked OSL=8,192** — every request generates exactly 8,192 output tokens — which exposes Dynamo wrapper overhead clearly but is not directly comparable to Google's variable-OSL number. 
 
 **Reading guide:**
 - **Goal 1** (NVIDIA Standalone vs Google): direct apples-to-apples — both use `bench_serving` + variable OSL on the same SGLang version and engine config. NVIDIA Standalone matches and exceeds Google's published numbers on every metric.

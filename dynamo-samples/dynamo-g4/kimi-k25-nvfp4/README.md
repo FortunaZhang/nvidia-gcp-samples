@@ -47,9 +47,8 @@ Pick the right benchmark for what you want to measure:
 kubectl exec perf-kimi-k25-nvfp4 -- bash -c \
   'nohup setsid /workspace/run-benchmark-natural-eos.sh standalone > /workspace/bench.log 2>&1 &'
 
-# Use case 2 — Goal 2 (Dynamo wrapper isolation): locked OSL=8192, aiperf, random workload.
-# Run twice — once against Standalone, then tear it down and run against Dynamo parity —
-# so both hit identical decode workload and the wrapper effect is visible in the delta.
+# Use case 2 — Goal 2 (Dynamo Parity vs Standalone): locked OSL=8192, aiperf, random workload.
+# Run twice — once against Standalone, then tear it down and run against Dynamo parity.
 kubectl exec perf-kimi-k25-nvfp4 -- bash -c \
   'nohup setsid /workspace/run-benchmark-parity.sh standalone > /workspace/bench.log 2>&1 &'
 kubectl exec perf-kimi-k25-nvfp4 -- bash -c \

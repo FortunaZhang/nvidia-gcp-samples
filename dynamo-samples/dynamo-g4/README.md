@@ -4,10 +4,10 @@ NVIDIA Dynamo + SGLang reference deployments for **Kimi K2.5** on Google Cloud's
 
 ## Quantizations
 
-| Quantization | Directory | Headline result (Standalone vs Google, same methodology) |
-|---|---|---|
-| **NVFP4** (recommended for Blackwell) | [`kimi-k25-nvfp4/`](kimi-k25-nvfp4/) | NVIDIA Standalone **3,374 tok/s** (+4.2% vs Google's 3,237) |
-| **Native INT4** | [`kimi-k25-int4/`](kimi-k25-int4/) | NVIDIA Standalone **3,525 tok/s** (+14.8% vs Google's 3,069) |
+| Quantization | Directory |
+|---|---|
+| **NVFP4** (recommended for Blackwell) | [`kimi-k25-nvfp4/`](kimi-k25-nvfp4/) |
+| **Native INT4** | [`kimi-k25-int4/`](kimi-k25-int4/) |
 
 Each subdirectory contains its own deployment YAMLs, benchmark scripts, and result tables.
 

@@ -11,7 +11,7 @@ NVIDIA Dynamo + SGLang reference deployment for **Kimi K2.5 Native INT4** on Goo
 | `dgd-agg-sglang-kimi-k25-int4-optimized.yaml` | **Template (work in progress)** — Dynamo aggregated DGD with KV-aware routing, radix cache, KV events for shared-prefix workloads. Not yet validated for production; use as a starting point and tune for your workload. |
 | `run-benchmark-natural-eos.sh` | bench_serving / aiperf with **variable OSL** (natural EOS termination) — matches Google's published methodology, direct apples-to-apples comparison |
 | `run-benchmark-parity.sh` | aiperf-based parity benchmark — locked OSL=8192, random workload, deterministic sampling (NVIDIA baseline + Dynamo parity comparison) |
-| `run-benchmark-optimized-shared.sh` | **Template (work in progress)** — sample shared-prefix benchmark (default 80% shared, configurable via `SHARED_PERCENT`) for the optimized Dynamo DGD. Use to explore the latency-vs-throughput trade-off; tune workload to your real distribution. |
+| `run-benchmark-optimized.sh` | **Template (work in progress)** — sample shared-prefix benchmark (default 80% shared, configurable via `SHARED_PERCENT`) for the optimized Dynamo DGD. Use to explore the latency-vs-throughput trade-off; tune workload to your real distribution. |
 | `benchmark-kimi-k25-int4-pod.yaml` | aiperf client pod (runs the benchmark scripts against either endpoint) |
 
 ## Topology
@@ -26,23 +26,40 @@ NVIDIA Dynamo + SGLang reference deployment for **Kimi K2.5 Native INT4** on Goo
 ## Quick start
 
 ```bash
-# 1. Standalone SGLang (matches Google reference)
-kubectl apply -f standalone-sglang-kimi-k25-int4.yaml
+# Deploy (apply only the variant you want to benchmark — same DGD name swaps with delete+apply)
+kubectl apply -f standalone-sglang-kimi-k25-int4.yaml          # bare SGLang (matches Google ref)
+kubectl apply -f dgd-agg-sglang-kimi-k25-int4.yaml             # Dynamo parity (random router)
+kubectl apply -f dgd-agg-sglang-kimi-k25-int4-optimized.yaml   # Dynamo optimized (KV router + radix)
+kubectl apply -f benchmark-kimi-k25-int4-pod.yaml              # aiperf client pod
 
-# 2. Dynamo parity DGD
-kubectl apply -f dgd-agg-sglang-kimi-k25-int4.yaml
+# Wait for engine ready (~20-25 min cold start; INT4 weights ~700 GB), then copy scripts once:
+kubectl cp run-benchmark-natural-eos.sh        perf-kimi-k25-int4:/workspace/
+kubectl cp run-benchmark-parity.sh             perf-kimi-k25-int4:/workspace/
+kubectl cp run-benchmark-optimized.sh   perf-kimi-k25-int4:/workspace/
+kubectl exec perf-kimi-k25-int4 -- chmod +x /workspace/run-benchmark-*.sh
+```
 
-# 3. Dynamo optimized DGD (shared-prefix workload — template)
-kubectl apply -f dgd-agg-sglang-kimi-k25-int4-optimized.yaml
+Pick the right benchmark for what you want to measure:
 
-# 4. Benchmark client pod
-kubectl apply -f benchmark-kimi-k25-int4-pod.yaml
-
-# Wait for engine ready (~20-25 min cold start; INT4 weights ~700 GB), then run a benchmark
-kubectl cp run-benchmark-natural-eos.sh perf-kimi-k25-int4:/workspace/
-kubectl exec perf-kimi-k25-int4 -- chmod +x /workspace/run-benchmark-natural-eos.sh
+```bash
+# Use case 1 — Goal 1 (NVIDIA Standalone vs Google): variable OSL, bench_serving harness.
+# Matches Google's published methodology exactly. Run against the Standalone deployment.
 kubectl exec perf-kimi-k25-int4 -- bash -c \
   'nohup setsid /workspace/run-benchmark-natural-eos.sh standalone > /workspace/bench.log 2>&1 &'
+
+# Use case 2 — Goal 2 (Dynamo wrapper isolation): locked OSL=8192, aiperf, random workload.
+# Run twice — once against Standalone, then tear it down and run against Dynamo parity —
+# so both hit identical decode workload and the wrapper effect is visible in the delta.
+kubectl exec perf-kimi-k25-int4 -- bash -c \
+  'nohup setsid /workspace/run-benchmark-parity.sh standalone > /workspace/bench.log 2>&1 &'
+kubectl exec perf-kimi-k25-int4 -- bash -c \
+  'nohup setsid /workspace/run-benchmark-parity.sh dynamo > /workspace/bench.log 2>&1 &'
+
+# Use case 3 — Goal 3 (Dynamo optimized): locked OSL, 80% shared prefix (default; override
+# via SHARED_PERCENT=98|50|0). Runs against the Dynamo optimized DGD — exercises radix cache
+# + KV-aware routing.
+kubectl exec perf-kimi-k25-int4 -- bash -c \
+  'nohup setsid /workspace/run-benchmark-optimized.sh dynamo > /workspace/bench.log 2>&1 &'
 ```
 
 Each YAML and script has inline comments explaining the choices.

@@ -1,0 +1,297 @@
+# Dynamo aggregated deployment for Kimi K2.5 Native INT4 — GOAL 3 (Beat) variant.
+# Optimized config to outperform standalone SGLang on a shared-prefix workload.
+# Same DGD name as baseline → swap by: kubectl delete -f dgd-agg-sglang-kimi-k25-int4.yaml
+# then kubectl apply -f dgd-agg-sglang-kimi-k25-int4-optimized.yaml
+#
+# Changes from baseline:
+#   Frontend:
+#     - removed --no-kv-events → KV events ENABLED. Live worker-side cache state
+#       signal to the router for smarter prefix-aware routing decisions.
+#   agg worker engine:
+#     - --mem-fraction-static 0.87 — validated working point on this cluster/workload.
+#       0.85 (shivajid baseline) also works but leaves more KV pressure.
+#       0.87 hit persistent KV retraction at conc=512 / OSL=8192 (KV pool saturated; 2,590 tok/s).
+#       0.90 was tested and FAILS — engine crashes under traffic burst (10% activation
+#       budget too tight at conc=512 with KV-events ON).
+#     - --chunked-prefill-size: kept at 16384 (32768 OOM'd activations after KV alloc)
+#     - +--enable-tokenizer-batch-encode (reduces tokenizer CPU contention at high conc)
+#     - MTP/EAGLE attempted and ABANDONED on this topology. SGLang asserts:
+#       "Pipeline parallelism is not compatible with overlap schedule, speculative
+#       decoding, mixed chunked prefill" (server_args.py:6071). TP=8+PP=2 is mandated
+#       by Kimi K2.5 INT4 weights (~630 GB) not fitting on one g4-standard-384 node.
+#       To enable MTP we would need DP=8+EP=8 single-node, which doesn't fit the
+#       model size. See debug.md #4 for the failure trace and reasoning.
+#     - (EPLB not enabled — requires --ep-size > 1 which conflicts with TP=8+PP=2
+#       on the INT4 config; left as a future lever requiring topology change)
+---
+apiVersion: nvidia.com/v1alpha1
+kind: DynamoGraphDeployment
+metadata:
+  name: agg-sglang-kimi-k25-int4
+  namespace: default
+spec:
+  services:
+    Frontend:
+      componentType: frontend
+      replicas: 1     # Single Frontend handles conc=512 fine. Earlier 502s were
+                      # aiperf-client-side worker contention (perf pod CPU=4 starved
+                      # by 500 default Python workers), fixed by --workers-max 64 in
+                      # run-benchmark-opt.sh — not a Frontend scaling problem.
+      extraPodSpec:
+        imagePullSecrets:
+          - name: nvcr-imagepullsecret
+        mainContainer:
+          image: nvcr.io/nvidia/ai-dynamo/sglang-runtime:1.1.0
+          command: ["python3"]
+          args:
+            - -m
+            - dynamo.frontend
+            - --router-mode
+            - kv
+            # KV events ENABLED (--no-kv-events removed) — real-time worker-side cache
+            # state lets the router make smarter prefix routing decisions.
+          env:
+            - name: POD_UID
+              valueFrom: { fieldRef: { fieldPath: metadata.uid } }
+            - name: HF_HOME
+              value: /model-cache
+            - name: HF_HUB_CACHE
+              value: /model-cache/.model-express/cache
+          volumeMounts:
+            - mountPath: /model-cache
+              name: model-cache
+        volumes:
+          - name: model-cache
+            persistentVolumeClaim:
+              claimName: model-cache
+
+    ModelExpress:
+      componentType: frontend
+      replicas: 1
+      envFromSecret: hf-token-secret
+      resources:
+        limits:   { cpu: "4", memory: 16Gi }
+        requests: { cpu: "1", memory: 4Gi }
+      livenessProbe:
+        tcpSocket: { port: 8000 }
+        initialDelaySeconds: 120
+        periodSeconds: 30
+        timeoutSeconds: 10
+        failureThreshold: 10
+      readinessProbe:
+        tcpSocket: { port: 8000 }
+        initialDelaySeconds: 60
+        periodSeconds: 15
+        timeoutSeconds: 10
+        failureThreshold: 10
+      extraPodSpec:
+        imagePullSecrets:
+          - name: nvcr-imagepullsecret
+        mainContainer:
+          image: nvcr.io/nvidia/ai-dynamo/modelexpress-server:0.3.0
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              echo "Starting Model Express Server..."
+              ./modelexpress-server &
+              SERVER_PID=$!
+
+              mkdir -p $MODEL_CACHE_PATH /model-cache/.model-express
+              cat > /model-cache/.model-express/config.yaml << EOF
+              local_path: $MODEL_CACHE_PATH
+              server_endpoint: http://localhost:8000
+              timeout_secs: null
+              EOF
+
+              for i in $(seq 1 60); do
+                if ./modelexpress-cli --endpoint http://localhost:8000 health > /dev/null 2>&1; then
+                  echo "Server is ready"
+                  break
+                fi
+                sleep 2
+              done
+
+              echo "Downloading $MODEL_NAME ..."
+              ./modelexpress-cli --endpoint http://localhost:8000 \
+                --cache-path $MODEL_CACHE_PATH \
+                model download "$MODEL_NAME"
+
+              SNAPSHOT_DIR=$(ls -td $MODEL_CACHE_PATH/models--$(echo $MODEL_NAME | sed 's|/|--|g')/snapshots/*/ 2>/dev/null | head -1)
+              if [ -n "$SNAPSHOT_DIR" ]; then
+                SNAPSHOTS_PARENT=$(dirname "$SNAPSHOT_DIR")
+                ln -sfn "$(basename "$SNAPSHOT_DIR")" "$SNAPSHOTS_PARENT/latest"
+              fi
+
+              wait $SERVER_PID
+          env:
+            - name: MODEL_EXPRESS_SERVER_PORT
+              value: "8000"
+            - name: MODEL_EXPRESS_LOGGING_LEVEL
+              value: info
+            - name: MODEL_EXPRESS_CACHE_DIRECTORY
+              value: /model-cache/.model-express/cache
+            - name: MX_METADATA_BACKEND
+              value: redis
+            - name: REDIS_URL
+              value: redis://redis-master.default.svc.cluster.local:6379
+            - name: MODEL_NAME
+              value: moonshotai/Kimi-K2.5
+            - name: MODEL_CACHE_PATH
+              value: /model-cache/.model-express/cache
+            - name: HF_HUB_CACHE
+              value: /model-cache/.model-express/cache
+            - name: HF_XET_HIGH_PERFORMANCE
+              value: "1"
+          volumeMounts:
+            - mountPath: /model-cache
+              name: model-cache
+        volumes:
+          - name: model-cache
+            persistentVolumeClaim:
+              claimName: model-cache
+
+    agg:
+      componentType: worker
+      replicas: 1
+      multinode:
+        nodeCount: 2
+      envFromSecret: hf-token-secret
+      resources:
+        limits:   { gpu: "8" }
+        requests: { gpu: "8" }
+      sharedMemory:
+        size: 80Gi
+      extraPodSpec:
+        # hostNetwork on the GPU worker: matches the Google standalone topology so that
+        # NCCL_SOCKET_IFNAME=eth0,eth1 actually uses both gVNICs from the multi-NIC node.
+        hostNetwork: true
+        dnsPolicy: ClusterFirstWithHostNet
+        imagePullSecrets:
+          - name: nvcr-imagepullsecret
+        nodeSelector:
+          cloud.google.com/gke-accelerator: nvidia-rtx-pro-6000
+        tolerations:
+          - key: nvidia.com/gpu
+            operator: Exists
+            effect: NoSchedule
+          - key: cloud.google.com/gke-spot
+            operator: Exists
+            effect: NoSchedule
+          - key: cloud.google.com/gke-preemptible
+            operator: Exists
+            effect: NoSchedule
+        mainContainer:
+          image: nvcr.io/nvidia/ai-dynamo/sglang-runtime:1.1.0
+          workingDir: /workspace
+          securityContext:
+            runAsUser: 0
+          startupProbe:
+            httpGet: { path: /live, port: 9090 }
+            periodSeconds: 60
+            timeoutSeconds: 5
+            failureThreshold: 60
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              MODEL_NAME=moonshotai/Kimi-K2.5
+              MODEL_DIR=/model-cache/.model-express/cache/models--$(echo $MODEL_NAME | sed 's|/|--|g')/snapshots/latest
+
+              echo "Waiting for model snapshot at $MODEL_DIR ..."
+              for i in $(seq 1 1800); do
+                if [ -f "$MODEL_DIR/config.json" ]; then
+                  echo "Model snapshot ready."
+                  break
+                fi
+                sleep 2
+              done
+              if [ ! -f "$MODEL_DIR/config.json" ]; then
+                echo "ERROR: model snapshot not found at $MODEL_DIR"
+                exit 1
+              fi
+
+              # SGLang launch — Goal 3 optimized config (engine tuning only).
+              # MTP/EAGLE removed: SGLang explicitly forbids PP > 1 with speculative
+              # decoding (server_args.py check_server_args asserts: "Pipeline
+              # parallelism is not compatible with overlap schedule, speculative
+              # decoding, mixed chunked prefill"). Our TP=8 + PP=2 topology is
+              # mandated by Kimi K2.5 INT4 weights (~630 GB) not fitting on one
+              # 768 GB g4-standard-384 node + KV + activations. To enable MTP we
+              # would need a topology change (e.g., DP=8 + EP=8 + single node) which
+              # is infeasible for this model size on RTX Pro 6000. See debug.md #4.
+              exec python3 -m dynamo.sglang \
+                --model-path "$MODEL_DIR" \
+                --served-model-name "$MODEL_NAME" \
+                --trust-remote-code \
+                --tensor-parallel-size 8 \
+                --pipeline-parallel-size 2 \
+                --kv-cache-dtype fp8_e5m2 \
+                --reasoning-parser kimi_k2 \
+                --tool-call-parser kimi_k2 \
+                --mem-fraction-static 0.87 \
+                --chunked-prefill-size 16384 \
+                --enable-tokenizer-batch-encode \
+                --host 0.0.0.0 \
+                --watchdog-timeout 3600
+              # Note: --enable-eplb requires --ep-size > 1. With TP=8 + PP=2 (no DP
+              # attention) on the INT4 config, enabling EP=8 conflicts with the
+              # existing TP slicing. EPLB removed; if you want to try expert
+              # parallelism, also set --ep-size 8 and verify Kimi K2.5 INT4 supports
+              # the combined TP+EP layout.
+          env:
+            - name: POD_UID
+              valueFrom: { fieldRef: { fieldPath: metadata.uid } }
+            - name: HF_HOME
+              value: /model-cache
+            - name: HF_HUB_CACHE
+              value: /model-cache/.model-express/cache
+            - name: MODEL_CACHE_PATH
+              value: /model-cache/.model-express/cache
+            - name: MODEL_EXPRESS_URL
+              value: http://agg-sglang-kimi-k25-int4-modelexpress:8000
+            # Filestore-backed Triton cache — shared across pods, survives restart.
+            # If you hit "Stale file handle" (debug.md #8), switch to /tmp/.triton-cache.
+            - name: TRITON_CACHE_DIR
+              value: /model-cache/.triton-cache
+            # NCCL — same as Google reference. eth0,eth1 engages both gVNICs.
+            - name: NCCL_DEBUG
+              value: INFO
+            - name: NCCL_SOCKET_IFNAME
+              value: "eth0,eth1"
+            - name: NCCL_IB_DISABLE
+              value: "1"
+            - name: NCCL_P2P_LEVEL
+              value: SYS
+            - name: NCCL_SOCKET_NTHREADS
+              value: "8"
+            - name: NCCL_NSOCKS_PERTHREAD
+              value: "8"
+            - name: NCCL_MIN_NCHANNELS
+              value: "8"
+            - name: NCCL_ALLOC_P2P_NET_LL_BUFFERS
+              value: "1"
+            # SGLang / runtime tuning carried over from the g4-dynamo recipe.
+            # SGLANG_ENABLE_SPEC_V2 removed — MTP/EAGLE is not viable with PP=2 (see debug.md #4).
+            - name: SGLANG_ENABLE_JIT_DEEPGEMM
+              value: "0"
+            - name: SGLANG_ENABLE_DEEP_GEMM
+              value: "0"
+            - name: SGLANG_DISABLE_DEEP_GEMM
+              value: "1"
+            - name: OMP_NUM_THREADS
+              value: "24"
+            - name: SGLANG_SET_CPU_AFFINITY
+              value: "1"
+            - name: SAFETENSORS_FAST_GPU
+              value: "1"
+            - name: PYTORCH_CUDA_ALLOC_CONF
+              value: "expandable_segments:True"
+            - name: FLASHINFER_DISABLE_VERSION_CHECK
+              value: "1"
+          volumeMounts:
+            - mountPath: /model-cache
+              name: model-cache
+        volumes:
+          - name: model-cache
+            persistentVolumeClaim:
+              claimName: model-cache

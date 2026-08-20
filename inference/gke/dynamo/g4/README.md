@@ -9,6 +9,7 @@ NVIDIA Dynamo + SGLang reference deployments on Google Cloud's `g4-standard-384`
 | **Kimi K2.5** | NVFP4 (recommended for Blackwell) | [`kimi-k25-nvfp4/`](kimi-k25-nvfp4/) |
 | **Kimi K2.5** | Native INT4 | [`kimi-k25-int4/`](kimi-k25-int4/) |
 | **DeepSeek V4 Pro** | NVFP4 | [`ds-v4-pro-nvfp4/`](ds-v4-pro-nvfp4/) |
+| **GLM-5.2** | NVFP4 | [`glm-5.2-nvfp4/`](glm-5.2-nvfp4/) |
 
 Each subdirectory contains its own deployment YAMLs, benchmark results, and README.
 

@@ -40,4 +40,6 @@ OffloadConfig(pinned_memory=True, max_gpu_mem_fraction=0.08,
               include_patterns=["rope","patch_embedding","condition_embedder","blocks.*","norm_out","proj_out"])
 ```
 
-Lower `max_gpu_mem_fraction` → more offloaded → more models fit. `pinned_memory=True` gives the ~0% warm path (needs the `IPC_LOCK` capability to pin > 8 MB); pageable is ~2× slower but unbounded. Load models one at a time (sequential settle) so the un-freed `from_pretrained` footprints don't stack and OOM.
+Lower `max_gpu_mem_fraction` → more offloaded → more models fit. `pinned_memory=True` gives the ~0% warm path (needs the `IPC_LOCK` capability to pin > 8 MB); pageable is ~2× slower but unbounded. Load models one at a time (**sequential settle**) so the un-freed `from_pretrained` footprints don't stack and OOM.
+
+**Alternative — sequential profile:** profile the first model, then reuse that profile on the rest via `flextensor.save_profile(dir, name)` → `flextensor.offload_from_profile(model, dir)`, which skips discovery/profiling on replicas 2…N. It yields equivalent VRAM / host-RSS / gen latency — only ~12% faster replica startup — so this sample ships the simpler sequential-settle path.

@@ -4,7 +4,7 @@
 Load one model at a time: from_pretrained -> offload(pinned) -> one full gen (drives the offload
 manager to its steady INFERENCE phase, which frees the original weight source + finishes pinned
 packing) -> next. This caps peak host RSS so all 3 fit on a 384 GB node while keeping the 1-model
-pinned latency (~45 s / +0.6%) -- density AND low latency together. (Loading all 3 before any gen
+pinned latency -- density AND low latency together. (Loading all 3 before any gen
 instead stacks the un-freed from_pretrained footprints and OOMs.)
 """
 import time, resource, gc, traceback
@@ -104,7 +104,5 @@ print("\n======== 3-model PINNED (sequential settle) ========", flush=True)
 if lat:
     print("  fit %d/%d models | warm %.1fs/model avg | live rss %.0f GB | PEAK rss %.0f GB"
           % (len(pipes), N, sum(lat) / len(lat), rss_now_gb(), rss_peak_gb()), flush=True)
-print("  prior: wan3_pinned (load-all-then-gen) OOM ~544 GB peak", flush=True)
-print("  prior: 1-model pinned 45.3s (+0.6%) | 3-model UNpinned 85.6s", flush=True)
-print("  -> if settle ~45s/model AND fit: density (3-on-1) AND +0.6% pinned latency together.", flush=True)
+print("  -> sequential settle: 3 pinned models fit on one GPU, each near 1-model-pinned latency.", flush=True)
 print("=====================================================", flush=True)

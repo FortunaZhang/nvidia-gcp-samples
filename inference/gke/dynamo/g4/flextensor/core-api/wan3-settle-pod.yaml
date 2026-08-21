@@ -1,6 +1,6 @@
-# 3 Wan2.2 models, PINNED offload, SEQUENTIAL-SETTLE load pattern (fix for wan3_pinned OOM).
+# 3 Wan2.2 models, PINNED offload, sequential-settle load pattern.
 # Loads one model at a time and drives it to INFERENCE (settle) before loading the next, so the
-# ~180 GB from_pretrained transients don't stack. Eng-measured settle peak ~294 GB (fits 384 GB node).
+# per-model from_pretrained transients don't stack and all 3 fit on the node.
 apiVersion: v1
 kind: Pod
 metadata:

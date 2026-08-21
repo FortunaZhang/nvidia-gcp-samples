@@ -4,7 +4,7 @@
 
 Fires N requests at a concurrency level, round-robining across the given served model names,
 and reports per-request gen latency (p50/p99), throughput (req/s, videos/min), and errors.
-Used to quantify (a) Dynamo serving overhead vs the standalone 45.1 s/gen and (b) 3-on-1 density
+Used to quantify (a) Dynamo serving overhead vs standalone and (b) 3-on-1 density
 through the router. aiperf doesn't cover /v1/videos, so this is a purpose-built client.
 """
 import argparse
@@ -76,7 +76,7 @@ async def main(args):
         pct = lambda q: lat[min(len(lat) - 1, int(q * len(lat)))]
         print(f"  gen latency: p50={statistics.median(lat):.1f}s  p99={pct(0.99):.1f}s  min={lat[0]:.1f}s  max={lat[-1]:.1f}s")
         print(f"  throughput: {len(oks) / wall:.3f} req/s = {len(oks) / wall * 60:.1f} videos/min  |  wall={wall:.1f}s")
-        print("  reference: standalone warm = 45.1 s/gen (concurrency=1). Delta = Dynamo HTTP+serialize+route overhead.")
+        print("  reference: compare vs standalone warm gen (concurrency=1). Delta = Dynamo HTTP+serialize+route overhead.")
     print("====================================================", flush=True)
 
 

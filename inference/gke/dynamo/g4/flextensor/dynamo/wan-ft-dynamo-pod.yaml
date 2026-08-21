@@ -42,7 +42,7 @@ spec:
         -d '{"model":"Wan-AI/Wan2.2-T2V-A14B-Diffusers","prompt":"a cat walking on green grass, cinematic","size":"832x480","seconds":1,"nvext":{"num_frames":17,"num_inference_steps":20,"guidance_scale":4.0}}' \
         -o /workspace/resp.json -w "HTTP=%{http_code} time=%{time_total}s bytes=%{size_download}\n"
       python -c "import json;r=json.load(open('/workspace/resp.json'));d=(r.get('data') or [{}])[0].get('b64_json') or '';print('SMOKE resp: id=',r.get('id'),'status=',r.get('status'),'mp4_bytes=',len(d)*3//4)" 2>&1 | tail -3
-      echo "=== worker.log tail (look for READY ... GPU resident ~21 GB) ==="; tail -45 /workspace/worker.log
+      echo "=== worker.log tail (look for READY / GPU resident) ==="; tail -45 /workspace/worker.log
       echo "=== frontend.log tail ==="; tail -20 /workspace/frontend.log
       echo "=== DONE ==="
     securityContext:

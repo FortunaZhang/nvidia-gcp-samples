@@ -13,7 +13,7 @@ NVIDIA Dynamo + SGLang reference deployments on Google Cloud's `g4-standard-384`
 
 Each subdirectory contains its own deployment YAMLs, benchmark results, and README.
 
-**Weight-offload technique:** [`flextensor/`](flextensor/) — NVIDIA FlexTensor GPU↔host weight offloading (Wan2.2-T2V diffusion), standalone + Dynamo `/v1/videos`.
+**Weight-offload technique:** [`flextensor/`](flextensor/) — NVIDIA FlexTensor GPU↔host weight offloading (Wan2.2-T2V).
 
 ## Why NVFP4 on this hardware
 

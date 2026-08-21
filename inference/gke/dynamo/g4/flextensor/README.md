@@ -23,8 +23,9 @@ Density is a **capacity** win (host many models per GPU, routed on demand), not 
 
 ## When to use
 
-- ✅ **Weight-heavy + compute-bound** — image/video diffusion, large-LLM prefill: the PCIe transfer hides behind compute, so offload is ~free and you fit more per GPU.
-- ❌ **Weight-light or memory-bound** — small TTS/ASR, LLM decode: little to offload and the transfer can't hide → overhead, not gain. Use batching / KV management instead.
+Offload is near-free only when each step is **compute-bound** enough to hide the PCIe weight transfer:
+- ✅ **Weight-heavy, compute-bound** — image/video diffusion (validated here on Wan2.2: +0.6% warm). Large-LLM **prefill** is the other classic compute-bound case where the same principle applies.
+- ❌ **Weight-light or memory-bound** — small TTS/ASR, LLM **decode**: little to offload and the transfer can't hide → overhead, not gain. Use batching / KV management instead.
 
 After offloading, size against **host RAM** (pinned footprint), not VRAM.
 

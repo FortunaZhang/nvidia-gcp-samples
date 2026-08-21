@@ -1,4 +1,4 @@
-# FlexTensor via NVIDIA Dynamo — Wan2.2-T2V `/v1/videos`
+# FlexTensor via NVIDIA Dynamo — Wan2.2-T2V
 
 The same FlexTensor offload, served behind a Dynamo custom worker on the `/v1/videos` endpoint. The worker forks ai-dynamo/dynamo `examples/diffusers/worker.py` and swaps FastVideo for `WanPipeline` + `flextensor.offload()`. `/v1/videos` is capability-routed (any worker that registers `ModelType.Videos` owns it), so no SGLang/vLLM is involved.
 

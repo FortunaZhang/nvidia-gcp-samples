@@ -1,6 +1,6 @@
 # FlexTensor Weight-Offload on g4 (RTX PRO 6000 / SM120)
 
-[NVIDIA FlexTensor](https://github.com/ai-dynamo/flextensor) offloads model **weights** from GPU VRAM to host RAM and streams each layer back over PCIe just-in-time (prefetched behind compute), so you can fit a bigger model — or **more models per GPU** — at near-zero latency cost when the workload is compute-bound. This sample demonstrates it on **Wan2.2-T2V-A14B** (text-to-video diffusion) on a GKE `g4-standard` node, **standalone** and served through **[NVIDIA Dynamo](https://github.com/ai-dynamo/dynamo)**.
+[NVIDIA FlexTensor](https://github.com/ai-dynamo/flextensor) offloads model **weights** from GPU VRAM to host RAM and streams each layer back over PCIe just-in-time (prefetched behind compute), so you can **fit a bigger model** — or **more models per GPU** — at near-zero latency cost when the workload is compute-bound. This sample demonstrates it on **Wan2.2-T2V-A14B** (text-to-video diffusion) on a GKE `g4-standard` node, **standalone** and served through **[NVIDIA Dynamo](https://github.com/ai-dynamo/dynamo)**.
 
 Diffusion denoising is a big, compute-bound per-step GEMM, so FlexTensor prefetches each transformer layer to the GPU while the previous one computes — the PCIe transfer hides behind compute and the offload is nearly free on the warm path. The bottleneck moves from **VRAM (96 GB)** to **host RAM (384 GB)**.
 

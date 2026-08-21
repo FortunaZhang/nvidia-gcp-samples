@@ -1,6 +1,6 @@
 # FlexTensor via NVIDIA Dynamo — Wan2.2-T2V
 
-The same FlexTensor offload, served behind a Dynamo custom worker on the `/v1/videos` endpoint. The worker forks ai-dynamo/dynamo `examples/diffusers/worker.py` and swaps FastVideo for `WanPipeline` + `flextensor.offload()`. `/v1/videos` is capability-routed (any worker that registers `ModelType.Videos` owns it), so no SGLang/vLLM is involved.
+The same FlexTensor offload, served behind a Dynamo custom worker on the `/v1/videos` endpoint. `/v1/videos` is capability-routed (any worker that registers `ModelType.Videos` owns it), so no SGLang/vLLM is involved.
 
 ## Files
 
@@ -13,7 +13,14 @@ The same FlexTensor offload, served behind a Dynamo custom worker on the `/v1/vi
 
 ## Results
 
-`POST /v1/videos` → base64 MP4. VRAM **21.4 GB** (offloaded), warm gen **45.1 s**, **< 1% overhead** vs standalone. 3 models (`wan-a/b/c`) behind one endpoint, each routable by name.
+Measured on g4 (Wan2.2-T2V-A14B) — the Dynamo serving layer adds negligible overhead vs standalone:
+
+| Config | Warm gen/model | Peak VRAM | Serving overhead |
+|---|---:|---:|---:|
+| **1 model** | **45.1 s** | **21.4 GB** | **< 1%** vs standalone |
+| **3 models, 1 GPU** | 45.1 s | 54.9 GB | **< 1%** |
+
+`POST /v1/videos` returns a base64 MP4. The 3 models (`wan-a/b/c`) share one GPU (~345 GB host RSS) behind one endpoint, each routable by name — density is a **capacity** win (more models per GPU), not a throughput multiplier (one GPU's compute is shared).
 
 ## Run
 
@@ -31,5 +38,6 @@ kubectl apply -f wan-ft-dynamo3-pod.yaml && kubectl logs -f pod/wan-ft-dynamo3
 
 ## Notes
 
+- The worker forks ai-dynamo/dynamo `examples/diffusers/worker.py` and swaps FastVideo for `WanPipeline` + `flextensor.offload()`.
 - `DYN_DISCOVERY_BACKEND=file` + `DYN_REQUEST_PLANE=tcp` (single-node; tcp is required — video base64 exceeds the NATS 1 MB limit).
 - The `/v1/videos` response must match the installed Dynamo version's schema (`output_format` field in Dynamo 1.3.0).
